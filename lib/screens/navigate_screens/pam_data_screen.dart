@@ -56,29 +56,61 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
     final device = widget.device;
     final bleState = ref.watch(bleProvider);
     final machineData = MachineData.fromPacket(bleState.characteristicValue);
-    // print(bleState.characteristicValue);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isConnected = bleState.connectedDevice == device;
+    final isDataAvailable = bleState.characteristicValue.isNotEmpty;
+    String unit(String mode) {
+      if (mode == 'C') {
+        return 'mA';
+      } else {
+        return 'V';
+      }
+    }
 
     final List<Map<String, String>> sensorData = [
       {
         'title': 'INPUT A',
         'value':
-            double.tryParse(machineData.inputA)?.toStringAsFixed(1) ?? '0.00',
-        'unit': 'V',
+            double.tryParse(machineData.inputA)?.toStringAsFixed(1) ?? '0.0',
+        'unit': unit(machineData.mode),
       },
       {'title': 'COIL A', 'value': machineData.coilA, 'unit': 'mA'},
       {
         'title': 'INPUT B',
         'value':
-            double.tryParse(machineData.inputB)?.toStringAsFixed(1) ?? '0.00',
-        'unit': 'V',
+            double.tryParse(machineData.inputB)?.toStringAsFixed(1) ?? '0.0',
+        'unit': unit(machineData.mode),
       },
       {'title': 'COIL B', 'value': machineData.coilB, 'unit': 'mA'},
     ];
+
+    bool led(String ready, bool pin15, bool pin6) {
+      if (ready == "ALL OFF") {
+        return false;
+      }
+
+      if (pin15 && pin6) {
+        return ready == "A + B ACTIVE";
+      }
+
+      if (ready == "A ACTIVE" || ready == "B ACTIVE") {
+        return true;
+      }
+
+      return false;
+    }
+
+    bool ledStandard(String ready) {
+      if (ready == "A + B ACTIVE") {
+        return true;
+      }
+      return false;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -87,16 +119,26 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               'Device ID: ${device.platformName.replaceAll('PVC-', '')}',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            if (bleState.connectedDevice == device)
-              Icon(
-                Icons.bluetooth_connected,
-                color: isDark ? AppColors.brandCyan : AppColors.brandRed,
+            if (isConnected)
+              IconButton(
+                icon: isDataAvailable
+                    ? Icon(Icons.bluetooth_connected)
+                    : Icon(Icons.bluetooth),
+                color: isDark
+                    ? isDataAvailable
+                          ? AppColors.brandCyan
+                          : AppColors.darkTextSecondary
+                    : isDataAvailable
+                    ? AppColors.brandRed
+                    : AppColors.darkTextSecondary,
+                onPressed: () {
+                  _bleNotifier.connectToDevice(device);
+                },
               ),
           ],
         ),
-        const SizedBox(height: 16),
-        if (bleState.connectedDevice != null &&
-            bleState.characteristicValue.isEmpty)
+
+        if (isConnected && !isDataAvailable)
           const Expanded(
             child: Center(
               child: Column(
@@ -144,25 +186,35 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
             ),
           ),
         Expanded(
-          child: SizedBox(
-            width: 200,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
             child: Column(
               children: [
                 Expanded(
                   child: _buildLEDCard(
-                    'READY',
-                    machineData.mode == 'V',
+                    "READY ${machineData.ready}",
+                    machineData.enableB
+                        ? led(
+                            machineData.ready,
+                            machineData.pin15,
+                            machineData.pin6,
+                          )
+                        : ledStandard(machineData.ready),
                     context,
                     isDark,
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    "Raw: ${bleState.characteristicValue}",
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
+                const SizedBox(height: 10),
+                Text(
+                  "Supply Voltage: 24V",
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 24),
                 ),
+                const SizedBox(height: 10),
+                _buildTextRow("ENABLE (A): PIN 15", machineData.pin15, isDark),
+                const SizedBox(height: 10),
+                _buildTextRow("ENABLE (B): PIN 6", machineData.pin6, isDark),
               ],
             ),
           ),
@@ -291,6 +343,29 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTextRow(String title, bool value, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 80),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 24),
+          ),
+
+          Icon(
+            value ? Icons.check_box : Icons.check_box_outline_blank,
+            color: isDark ? AppColors.brandCyan : AppColors.brandRed,
+          ),
+        ],
       ),
     );
   }
