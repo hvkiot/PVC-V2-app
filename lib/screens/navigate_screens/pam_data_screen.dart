@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pvc_v2/models/machine_data.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 
@@ -18,44 +17,12 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
   bool isScanning = false;
 
-  late final ProviderSubscription<BleState> _bleListener;
-
-  late final BleNotifier _bleNotifier;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Use read for the notifier as it's a one-time setup
-    _bleNotifier = ref.read(bleProvider.notifier);
-
-    // Listeners are fine in initState for side-effects (errors, dialogs)
-    _bleListener = ref.listenManual<BleState>(bleProvider, (previous, next) {
-      if (!mounted) return;
-
-      if (next.errorMessage != null && next.errorMessage!.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.errorMessage!),
-            backgroundColor: const Color(0xFFF56565),
-          ),
-        );
-        _bleNotifier.clearError();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _bleListener.close();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final device = widget.device;
     final bleState = ref.watch(bleProvider);
-    final machineData = MachineData.fromPacket(bleState.characteristicValue);
+    final bleNotifier = ref.read(bleProvider.notifier);
+    final machineData = ref.watch(machineDataProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isConnected = bleState.connectedDevice == device;
     final isDataAvailable = bleState.characteristicValue.isNotEmpty;
@@ -132,7 +99,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
                     ? AppColors.brandRed
                     : AppColors.darkTextSecondary,
                 onPressed: () {
-                  _bleNotifier.connectToDevice(device);
+                  bleNotifier.connectToDevice(device);
                 },
               ),
           ],
@@ -237,7 +204,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               data['title']!.toUpperCase(),
               style: TextStyle(
                 color: colorScheme.onSurface.withValues(alpha: 0.6),
-                fontSize: 12,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -295,7 +262,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               title.toUpperCase(),
               style: TextStyle(
                 color: colorScheme.onSurface.withValues(alpha: 0.6),
-                fontSize: 10,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.1,
               ),
@@ -303,7 +270,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
             const Spacer(),
             Center(
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 200),
                 width: 20,
                 height: 20,
                 decoration: BoxDecoration(

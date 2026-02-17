@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -27,20 +26,18 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       // 60% Background Usage
       elevation: 0,
       scrolledUnderElevation: 0,
+      automaticallyImplyLeading: false,
 
       // Custom Back Button (10% Accent if needed, or standard theme color)
-      leading: showBackArrow
-          ? IconButton(
-              icon: Icon(Icons.arrow_back_ios_new),
-              onPressed: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/'); // Fallback to home
-                }
-              },
-            )
-          : null, // If false, shows Drawer icon if Drawer exists, or nothing
+      leading: Padding(
+        padding: const EdgeInsets.only(left: 16.0, top: 10),
+        child: CircleAvatar(
+          radius: 20,
+          backgroundImage: NetworkImage(
+            'https://hvksystems.in/wp-content/uploads/2021/11/logo.png',
+          ),
+        ),
+      ),
 
       actions: actions,
 

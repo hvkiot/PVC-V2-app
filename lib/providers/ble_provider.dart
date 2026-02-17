@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:pvc_v2/models/machine_data.dart';
 
 // State class to hold all BLE-related state
 class BleState {
@@ -251,6 +252,9 @@ class BleNotifier extends Notifier<BleState> {
                 state = state.copyWith(clearError: true);
                 return true;
               } else {
+                logger.w(
+                  "Characteristic ${characteristic.properties.write} $data is not writable",
+                );
                 state = state.copyWith(
                   errorMessage: "Characteristic is not writable",
                 );
@@ -331,4 +335,13 @@ final scanResultsProvider = StreamProvider<List<ScanResult>>((ref) {
     (results) =>
         results.where((r) => r.device.platformName.isNotEmpty).toList(),
   );
+});
+
+/// A provider that automatically parses the raw BLE string into a MachineData object.
+final machineDataProvider = Provider<MachineData>((ref) {
+  // Watch the raw BLE state
+  final bleState = ref.watch(bleProvider);
+
+  // Return the parsed model
+  return MachineData.fromPacket(bleState.characteristicValue);
 });
