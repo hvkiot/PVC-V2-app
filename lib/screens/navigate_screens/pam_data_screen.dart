@@ -23,9 +23,11 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
     final bleState = ref.watch(bleProvider);
     final bleNotifier = ref.read(bleProvider.notifier);
     final machineData = ref.watch(machineDataProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final isConnected = bleState.connectedDevice == device;
     final isDataAvailable = bleState.characteristicValue.isNotEmpty;
+    final isConnecting = bleState.isConnecting;
     String unit(String mode) {
       if (mode == 'C') {
         return 'mA';
@@ -78,47 +80,113 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              'Device ID: ${device.platformName.replaceAll('PVC-', '')}',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            if (isConnected)
-              IconButton(
-                icon: isDataAvailable
-                    ? Icon(Icons.bluetooth_connected)
-                    : Icon(Icons.bluetooth),
-                color: isDark
-                    ? isDataAvailable
-                          ? AppColors.brandCyan
-                          : AppColors.darkTextSecondary
-                    : isDataAvailable
-                    ? AppColors.brandRed
-                    : AppColors.darkTextSecondary,
-                onPressed: () {
-                  bleNotifier.connectToDevice(device);
-                },
-              ),
-          ],
-        ),
-
-        if (isConnected && !isDataAvailable)
-          const Expanded(
+        if (!isConnected) ...[
+          Expanded(
             child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text("Waiting for Data..."),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // 1. Visual Status Indicator
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.error.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.bluetooth_disabled_rounded,
+                        size: 64,
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // 2. Primary Status Message
+                    Text(
+                      "HARDWARE DISCONNECTED",
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 3. Instruction Text
+                    Text(
+                      "The connection to the PVC controller was lost. Please ensure the device is powered on and within range.",
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // 4. Action Button (Professional CTA)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => isConnecting
+                            ? null
+                            : bleNotifier.connectToDevice(device),
+                        icon: Icon(
+                          Icons.refresh_rounded,
+                          size: 20,
+                          color: isConnecting
+                              ? theme.colorScheme.onSurfaceVariant
+                              : theme.colorScheme.primary,
+                        ),
+                        label: Text(
+                          isConnecting
+                              ? "CONNECTING..."
+                              : "RECONNECT TO THE DEVICE",
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: isConnecting
+                                ? theme.colorScheme.onSurfaceVariant
+                                : theme.colorScheme.primary,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: isConnecting
+                              ? BorderSide(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                )
+                              : BorderSide(color: theme.colorScheme.primary),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          )
-        else
+          ),
+        ] else ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                'Device ID: ${device.platformName.replaceAll('PVC-', '')}',
+                style: theme.textTheme.titleLarge,
+              ),
+              if (isConnected)
+                IconButton(
+                  icon: isDataAvailable
+                      ? Icon(Icons.bluetooth_connected)
+                      : Icon(Icons.bluetooth),
+                  color: isDataAvailable
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurfaceVariant,
+                  onPressed: () {
+                    bleNotifier.connectToDevice(device);
+                  },
+                ),
+            ],
+          ),
+
           Expanded(
             child: GridView.builder(
               shrinkWrap: true,
@@ -152,40 +220,47 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               },
             ),
           ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-            child: Column(
-              children: [
-                Expanded(
-                  child: _buildLEDCard(
-                    "READY ${machineData.ready}",
-                    machineData.enableB
-                        ? led(
-                            machineData.ready,
-                            machineData.pin15,
-                            machineData.pin6,
-                          )
-                        : ledStandard(machineData.ready),
-                    context,
+
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 10,
+              ),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: _buildLEDCard(
+                      "READY ${machineData.ready}",
+                      machineData.enableB
+                          ? led(
+                              machineData.ready,
+                              machineData.pin15,
+                              machineData.pin6,
+                            )
+                          : ledStandard(machineData.ready),
+                      context,
+                      isDark,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Supply Voltage: 24V",
+                    style: theme.textTheme.bodyMedium?.copyWith(fontSize: 24),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildTextRow(
+                    "ENABLE (A): PIN 15",
+                    machineData.pin15,
                     isDark,
                   ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  "Supply Voltage: 24V",
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontSize: 24),
-                ),
-                const SizedBox(height: 10),
-                _buildTextRow("ENABLE (A): PIN 15", machineData.pin15, isDark),
-                const SizedBox(height: 10),
-                _buildTextRow("ENABLE (B): PIN 6", machineData.pin6, isDark),
-              ],
+                  const SizedBox(height: 10),
+                  _buildTextRow("ENABLE (B): PIN 6", machineData.pin6, isDark),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -203,7 +278,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
             Text(
               data['title']!.toUpperCase(),
               style: TextStyle(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
+                color: colorScheme.onSurfaceVariant,
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
               ),
@@ -250,7 +325,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
         ? isDark
               ? AppColors.brandCyan
               : AppColors.brandRed
-        : Colors.grey.withValues(alpha: 0.3);
+        : Theme.of(context).disabledColor;
 
     return Card(
       child: Padding(
@@ -261,7 +336,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
             Text(
               title.toUpperCase(),
               style: TextStyle(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
+                color: colorScheme.onSurfaceVariant,
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.1,
@@ -330,7 +405,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
           Icon(
             value ? Icons.check_box : Icons.check_box_outline_blank,
-            color: isDark ? AppColors.brandCyan : AppColors.brandRed,
+            color: Theme.of(context).colorScheme.primary,
           ),
         ],
       ),

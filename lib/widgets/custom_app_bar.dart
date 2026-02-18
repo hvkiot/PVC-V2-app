@@ -32,9 +32,11 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       leading: Padding(
         padding: const EdgeInsets.only(left: 16.0, top: 10),
         child: CircleAvatar(
-          radius: 20,
-          backgroundImage: NetworkImage(
-            'https://hvksystems.in/wp-content/uploads/2021/11/logo.png',
+          radius: 40,
+          backgroundColor: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 3.0),
+            child: Image.asset('assets/HVK.png', fit: BoxFit.contain),
           ),
         ),
       ),

@@ -17,4 +17,9 @@ class AppColors {
   static const Color darkSurface = Color(0xFF161B22);
   static const Color darkText = Color(0xFFEDEDED);
   static const Color darkTextSecondary = Color(0xFFAAAAAA);
+
+  // Industrial Feedback
+  static const Color mutedErrorRed = Color(
+    0xFFCF6679,
+  ); // Muted red for dark-mode errors
 }

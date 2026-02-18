@@ -143,6 +143,8 @@ class _AvailableDevicesScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return Scaffold(
       appBar: CustomAppBar(
         title: 'HVK',
@@ -151,10 +153,13 @@ class _AvailableDevicesScreenState
             : const SizedBox(height: 1.0),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              _startScanning();
-            },
+            icon: Icon(
+              Icons.refresh,
+              color: isScanning
+                  ? colorScheme.onSurfaceVariant
+                  : colorScheme.primary,
+            ),
+            onPressed: () => isScanning ? null : _startScanning(),
           ),
         ],
       ),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pvc_v2/models/machine_data.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
+import 'package:pvc_v2/providers/configuration_provider.dart';
+import 'package:pvc_v2/providers/global_message_provider.dart';
+import 'package:pvc_v2/providers/processing_overlay_provider.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/app_text_card.dart';
 
@@ -13,221 +15,257 @@ class ConfigScreen extends ConsumerStatefulWidget {
 }
 
 class _ConfigScreenState extends ConsumerState<ConfigScreen> {
-  bool get isDark => Theme.of(context).brightness == Brightness.dark;
-
-  late final MachineData machineData;
-  late final BleState bleState;
-  bool isLoading = false;
+  bool _isSynchronizing = false;
 
   @override
   void initState() {
     super.initState();
-    machineData = ref.read(machineDataProvider);
-    bleState = ref.read(bleProvider);
+    // Sync local state with hardware current values mainly on first load
+    // or we can leave it to the user.
+    // Better UX: Pre-fill with current hardware values.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final machineData = ref.read(machineDataProvider);
+      final configNotifier = ref.read(configTabProvider.notifier);
+      // We overwrite on init to ensure we start fresh?
+      // "prevents data loss when switching tabs" -> means we SHOULD NOT overwrite if we have edits.
+      // But how do we know if we have edits?
+      // We can check if the provider values are "0.0".
+      // Or we can just let the provider hold the state.
+      // Let's assume on *app* start it's 0.0.
+      // For this task, I will sync ONLY IF the current state is the default '0.0'.
+      final currentState = ref.read(configTabProvider);
+
+      if (currentState.coilCurrent == '0.0' &&
+          currentState.coilACurrent == '0.0' &&
+          currentState.coilBCurrent == '0.0') {
+        configNotifier.reset(
+          machineData.coilCurrent,
+          machineData.coilACurrent,
+          machineData.coilBCurrent,
+        );
+      }
+    });
   }
 
-  late String coilACurrent = machineData.coilACurrent;
-  late String coilBCurrent = machineData.coilBCurrent;
-  late String coilCurrent = machineData.coilCurrent;
-
-  void saveConfig(
-    WidgetRef ref,
-    String coilACurrent,
-    String coilBCurrent,
-  ) async {
+  void saveConfig() async {
     final machineData = ref.read(machineDataProvider);
+    final configState = ref.read(configTabProvider);
     final bleNotifier = ref.read(bleProvider.notifier);
+    final configNotifier = ref.read(configTabProvider.notifier);
+    final overlayNotifer = ref.read(processingOverlayProvider.notifier);
+    final messageNotifier = ref.read(globalMessageProvider.notifier);
+
     final String mode = machineData.func;
 
     // 1. Safety Validation: Pin 15 check
     if (machineData.pin15) {
-      _showErrorSnackBar("PIN 15 is ON - cannot change configuration");
+      messageNotifier.showError("PIN 15 is Active - Disable to edit");
       return;
     }
 
     // 2. Context-Aware & Range Validation
     bool isInputValid = false;
-    if (mode == '195') {
-      isInputValid =
-          double.tryParse(coilCurrent) != null && _isWithinRange(coilCurrent);
-    } else {
-      isInputValid =
-          double.tryParse(coilACurrent) != null &&
-          double.tryParse(coilBCurrent) != null &&
-          _isWithinRange(coilACurrent) &&
-          _isWithinRange(coilBCurrent);
+
+    // Helper to validate string
+    bool isValid(String val) {
+      final d = double.tryParse(val);
+      if (d == null) return false;
+      final i = d.round();
+      return i >= 500 && i <= 2600;
     }
 
-    if (!isInputValid) return; // Errors handled by helper methods
-
-    setState(() => isLoading = true);
-
-    // 3. Command Preparation (Using the :VALUE:MODE format)
-    List<String> commandsToSend = [];
     if (mode == '195') {
-      if (coilCurrent != machineData.coilCurrent) {
-        commandsToSend.add("CUR:${double.parse(coilCurrent).round()}:195");
+      isInputValid = isValid(configState.coilCurrent);
+      if (!isInputValid) {
+        messageNotifier.showError(
+          "Input value out of operational range (500mA - 2600mA)",
+        );
+        return;
       }
     } else {
-      if (coilACurrent != machineData.coilACurrent) {
-        commandsToSend.add("CURA:${double.parse(coilACurrent).round()}:196");
+      // Mode 196
+      if (!isValid(configState.coilACurrent) ||
+          !isValid(configState.coilBCurrent)) {
+        messageNotifier.showError(
+          "Input value out of operational range (500mA - 2600mA)",
+        );
+        return;
       }
-      if (coilBCurrent != machineData.coilBCurrent) {
-        commandsToSend.add("CURB:${double.parse(coilBCurrent).round()}:196");
+    }
+
+    // Start Loading
+    overlayNotifer.state = true;
+    setState(() => _isSynchronizing = true);
+
+    // 3. Command Preparation
+    List<String> commandsToSend = [];
+    if (mode == '195') {
+      if (configState.coilCurrent != machineData.coilCurrent) {
+        commandsToSend.add(
+          "CUR:${double.parse(configState.coilCurrent).round()}:195",
+        );
+      }
+    } else {
+      if (configState.coilACurrent != machineData.coilACurrent) {
+        commandsToSend.add(
+          "CURA:${double.parse(configState.coilACurrent).round()}:196",
+        );
+      }
+      if (configState.coilBCurrent != machineData.coilBCurrent) {
+        commandsToSend.add(
+          "CURB:${double.parse(configState.coilBCurrent).round()}:196",
+        );
       }
     }
 
     if (commandsToSend.isEmpty) {
-      setState(() => isLoading = false);
-      _showSuccessSnackBar("No changes detected.");
+      overlayNotifer.state = false;
+      messageNotifier.showSuccess("No changes detected.");
       return;
     }
 
-    // 4. Sequential Send with Hardware-Synced Delays
+    // 4. Sequential Send
     bool allSuccess = true;
     for (int i = 0; i < commandsToSend.length; i++) {
       bool success = await bleNotifier.writeToCharacteristic(commandsToSend[i]);
 
       if (!success) {
         allSuccess = false;
-        break; // Stop execution on hardware failure
+        break;
       }
 
-      // UX IMPROVEMENT: Hardware needs 3s for EEPROM write + 0.5s safety margin
-      // Only delay if there are more commands to send or to show "Success" state
+      // Hardware delay
       await Future.delayed(const Duration(milliseconds: 3500));
     }
 
-    // 5. Final Result Feedback
-    if (mounted) {
-      setState(() => isLoading = false);
-      if (allSuccess) {
-        _showSuccessSnackBar("✅ Configuration Saved & Verified Successfully");
-      }
-    }
-  }
+    overlayNotifer.state = false;
+    setState(() => _isSynchronizing = false);
 
-  // Helper methods to keep code clean
-  bool _isWithinRange(String value) {
-    final val = double.tryParse(value)?.round() ?? 0;
-    if (val < 500 || val > 2600) {
-      _showErrorSnackBar("Value $val out of range (500-2600)");
-      return false;
-    }
-    return true;
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
-    );
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isDark ? AppColors.brandCyan : Colors.green,
-      ),
-    );
-  }
-
-  void validateInput(String value) {
-    if (value.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Input value is empty"),
-          backgroundColor: isDark ? AppColors.brandRed : Colors.redAccent,
-        ),
+    if (allSuccess) {
+      // State Restoration: clear local overrides, force re-read from hardware
+      configNotifier.reset(
+        machineData.coilCurrent,
+        machineData.coilACurrent,
+        machineData.coilBCurrent,
       );
-      return;
-    }
-    // Parse as double first to handle "1000.0"
-    final doubleValue = double.tryParse(value);
-
-    if (doubleValue == null) {
-      // Handle case where input isn't a number at all
-      return;
-    }
-
-    // Convert to int for your range check
-    final int parsedValue = doubleValue.round();
-
-    if (parsedValue < 500 || parsedValue > 2600) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Input value is not in range of 500-2600"),
-          backgroundColor: isDark ? AppColors.brandRed : Colors.redAccent,
-        ),
-      );
+      messageNotifier.showSuccess("Configuration written to EEPROM");
+    } else {
+      messageNotifier.showError("EEPROM write failed — transaction aborted");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final machineData = ref.watch(machineDataProvider);
-    final String mode = machineData.func;
+    final configState = ref.watch(configTabProvider);
+    final configNotifier = ref.read(configTabProvider.notifier);
     final theme = Theme.of(context);
+
+    final String mode = machineData.func;
+    final bool isPin15Active = machineData.pin15;
+
+    // Dirty Check Logic
+    bool isDirty = false;
+    if (mode == '195') {
+      isDirty = configState.coilCurrent != machineData.coilCurrent;
+    } else {
+      isDirty =
+          (configState.coilACurrent != machineData.coilACurrent) ||
+          (configState.coilBCurrent != machineData.coilBCurrent);
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            // Mode Indicator
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
-                child: Text(
-                  'Current Mode: $mode',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'CURRENT MODE: $mode',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    if (isPin15Active) ...[
+                      const SizedBox(width: 10),
+                      Text(
+                        '(LOCKED)',
+                        style: TextStyle(
+                          color: AppColors.brandRed,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
+            if (isPin15Active)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                child: Text(
+                  "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.brandRed,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 10),
+
             if (mode == '195') ...[
               AppTextCard(
                 title: 'COIL Output Current',
-                currentValue: coilCurrent,
+                currentValue: configState.coilCurrent,
                 onChanged: (value) => {
-                  setState(() {
-                    coilCurrent = value!;
-                  }),
+                  if (value != null) configNotifier.setCoilCurrent(value),
                 },
                 icon: Icons.settings_input_component,
+                enabled: !isPin15Active,
               ),
             ] else ...[
               AppTextCard(
                 title: 'COIL A Output Current',
-                currentValue: coilACurrent,
+                currentValue: configState.coilACurrent,
                 onChanged: (value) => {
-                  setState(() {
-                    coilACurrent = value!;
-                  }),
+                  if (value != null) configNotifier.setCoilACurrent(value),
                 },
                 icon: Icons.settings_input_component,
+                enabled: !isPin15Active,
               ),
-              Divider(color: AppColors.darkTextSecondary, thickness: 1),
+              Divider(
+                color: theme.colorScheme.onSurface.withAlpha(25),
+                thickness: 1,
+              ),
               AppTextCard(
                 title: 'COIL B Output Current',
-                currentValue: coilBCurrent,
+                currentValue: configState.coilBCurrent,
                 onChanged: (value) => {
-                  setState(() {
-                    coilBCurrent = value!;
-                  }),
+                  if (value != null) configNotifier.setCoilBCurrent(value),
                 },
                 icon: Icons.settings_input_component,
+                enabled: !isPin15Active,
               ),
             ],
             Spacer(),
             ElevatedButton(
-              onPressed: isLoading
-                  ? null
-                  : () => saveConfig(ref, coilACurrent, coilBCurrent),
-              child: Text(isLoading ? 'Saving...' : 'Save Config'),
+              onPressed: (isDirty && !isPin15Active && !_isSynchronizing)
+                  ? () => saveConfig()
+                  : null,
+              child: Text(
+                _isSynchronizing ? 'Synchronizing...' : 'Save Config',
+              ),
             ),
             SizedBox(height: 32),
           ],

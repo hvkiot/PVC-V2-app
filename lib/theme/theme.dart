@@ -15,10 +15,15 @@ class AppTheme {
     brightness: Brightness.light,
     scaffoldBackgroundColor: AppColors.lightBg,
     colorScheme: const ColorScheme.light(
-      primary: AppColors.brandRed, // Light Theme Primary
+      primary: AppColors.brandRed,
       secondary: AppColors.brandBlue,
       surface: AppColors.lightSurface,
       onSurface: AppColors.lightText,
+      primaryContainer: Color(
+        0xFFFCE4EC,
+      ), // Light pink tint for icon backgrounds
+      onSurfaceVariant: Color(0xFF5F5F5F), // Muted label text
+      error: Color(0xFFD32F2F),
     ),
 
     textTheme: const TextTheme(labelLarge: _sharedButtonTextStyle),
@@ -73,12 +78,26 @@ class AppTheme {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
 
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: const Color(0xFFE8EAF0), // surfaceVariant equivalent
+      contentTextStyle: const TextStyle(
+        inherit: true,
+        color: AppColors.lightText,
+        fontWeight: FontWeight.bold,
+      ),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.brandRed, width: 1),
+      ),
+    ),
+
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
       backgroundColor: Colors.white,
       selectedItemColor: AppColors.brandRed,
       unselectedItemColor: AppColors.lightTextSecondary,
       selectedLabelStyle: const TextStyle(
-        inherit: true, // Prevents the interpolation crash
+        inherit: true,
         fontWeight: FontWeight.bold,
         fontSize: 12,
       ),
@@ -101,10 +120,15 @@ class AppTheme {
     brightness: Brightness.dark,
     scaffoldBackgroundColor: AppColors.darkBg,
     colorScheme: const ColorScheme.dark(
-      primary: AppColors.brandCyan, // Dark Theme Primary
+      primary: AppColors.brandCyan,
       secondary: AppColors.brandRed,
       surface: AppColors.darkSurface,
       onSurface: AppColors.darkText,
+      primaryContainer: Color(
+        0xFF0A2A3C,
+      ), // Dark teal tint for icon backgrounds
+      onSurfaceVariant: Color(0xFF9E9E9E), // Muted label text
+      error: AppColors.mutedErrorRed,
     ),
 
     textTheme: const TextTheme(labelLarge: _sharedButtonTextStyle),
@@ -159,18 +183,32 @@ class AppTheme {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
 
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: AppColors.darkSurface,
+      contentTextStyle: const TextStyle(
+        inherit: true,
+        color: AppColors.darkText,
+        fontWeight: FontWeight.bold,
+      ),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.brandCyan, width: 1),
+      ),
+    ),
+
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
       backgroundColor: AppColors.darkSurface,
       selectedItemColor: AppColors.brandCyan,
       unselectedItemColor: AppColors.darkTextSecondary,
       selectedLabelStyle: const TextStyle(
-        inherit: true, // Prevents the interpolation crash
+        inherit: true,
         fontWeight: FontWeight.bold,
         fontSize: 12,
       ),
       unselectedLabelStyle: const TextStyle(inherit: true, fontSize: 12),
       type: BottomNavigationBarType.fixed,
-      elevation: 0, // Keeps it flat and minimalist for dark mode
+      elevation: 0,
     ),
 
     inputDecorationTheme: const InputDecorationTheme(
