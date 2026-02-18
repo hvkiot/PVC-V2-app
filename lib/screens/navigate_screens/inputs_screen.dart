@@ -15,6 +15,10 @@ class InputScreen extends ConsumerStatefulWidget {
 class _InputScreenState extends ConsumerState<InputScreen> {
   late final MachineData machineData;
   late final BleState bleState;
+  bool get isDark => Theme.of(context).brightness == Brightness.dark;
+  String? _selectedMode;
+  String? _selectedInput1;
+  String? _selectedInput2;
 
   @override
   void initState() {
@@ -23,26 +27,23 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     bleState = ref.read(bleProvider);
   }
 
-  late String mode = machineData.func;
-  late String input1 = machineData.mode == 'V' ? 'Voltage' : 'Current';
-  late String input2 = machineData.mode == 'V' ? 'Voltage' : 'Current';
   bool isLoading = false;
 
   void modeChanged(String value) {
     setState(() {
-      mode = value;
+      _selectedMode = value;
     });
   }
 
   void input1Changed(String value) {
     setState(() {
-      input1 = value;
+      _selectedInput1 = value;
     });
   }
 
   void input2Changed(String value) {
     setState(() {
-      input2 = value;
+      _selectedInput2 = value;
     });
   }
 
@@ -52,59 +53,111 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     String input1,
     String input2,
   ) async {
-    setState(() {
-      isLoading = true;
-    });
+    // 1. Get current hardware data from your Provider
+    final machineData = ref.read(machineDataProvider); //
+    final bleNotifier = ref.read(bleProvider.notifier); //
 
-    final machineData = ref.read(machineDataProvider);
-    final bleNotifier = ref.read(bleProvider.notifier);
-
-    // 1. Validation: Pin 15 must be false (OFF) to change function
+    // 2. Validation: Pin 15 must be false (OFF) as per W.E.ST. rules
     if (machineData.pin15) {
+      //
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text("❌ PIN 15 is ON - cannot change function"),
-          backgroundColor: Colors.redAccent,
+          backgroundColor: isDark ? AppColors.brandRed : Colors.redAccent,
         ),
       );
       return;
     }
 
-    // 2. BLE Client Sends Command
-    // Writes "195" or "196" to UUID 12345678-1234-5678-1234-56789abcdef1
-    bool success = await bleNotifier.writeToCharacteristic(selectedMode);
-    bool success2 = false;
-    bool success3 = false;
-    if (mode == '195') {
-      success2 = await bleNotifier.writeToCharacteristic(input1);
-      success3 = true;
-    } else {
-      success2 = await bleNotifier.writeToCharacteristic(input1);
-      success3 = await bleNotifier.writeToCharacteristic(input2);
+    setState(() => isLoading = true);
+
+    // 3. Identify ONLY unique/changed data
+    List<String> commandsToSend = [];
+
+    // Check Mode (FUNC)
+    bool modeChanged = selectedMode != machineData.func;
+    if (modeChanged) {
+      commandsToSend.add(selectedMode);
     }
 
-    if (success && success2 && success3) {
-      Future.delayed(const Duration(seconds: 4), () {
-        setState(() {
-          isLoading = false;
-        });
+    // Check Input 1 (mapping 'Voltage'/'Current' to hardware codes if necessary)
+    // Assuming machineData.mode reflects the current input type
+    String requestedInputHW = input1.toUpperCase(); // "VOLTAGE" or "CURRENT"
+    String currentInputHW = machineData.mode == 'V' ? 'VOLTAGE' : 'CURRENT';
+    if (modeChanged || requestedInputHW != currentInputHW) {
+      commandsToSend.add(requestedInputHW);
+    }
+
+    // Check Input 2 (only for Mode 196)
+    if (selectedMode == '196') {
+      String requestedInput2HW = input2.toUpperCase();
+      // If Input 2 is different from what was just set for Input 1
+      if (requestedInput2HW != requestedInputHW) {
+        commandsToSend.add(requestedInput2HW);
+      }
+    }
+
+    // Check if commandsToSend is empty
+    if (commandsToSend.isEmpty) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("No changes detected.")));
+      return;
+    }
+
+    // 4. Execution: Send only the unique commands
+    bool allSuccess = true;
+
+    for (String command in commandsToSend) {
+      bool success = await bleNotifier.writeToCharacteristic(command); //
+      if (!success) allSuccess = false;
+      // Small delay to allow the hardware's background thread to process
+      await Future.delayed(const Duration(milliseconds: 3500));
+    }
+
+    // 5. Result Feedback
+    if (allSuccess) {
+      setState(() {
+        _selectedMode = null;
+        _selectedInput1 = null;
+        _selectedInput2 = null;
+        isLoading = false;
+      });
+      Future.delayed(const Duration(milliseconds: 500), () {
+        // Reduced from 4s for better UX
         if (mounted) {
+          setState(() => isLoading = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                "Command '$selectedMode', '$input1', '$input2' sent successfully",
-                style: Theme.of(context).textTheme.bodyLarge,
+                "Updated: ${commandsToSend.join(', ')} successfully",
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: isDark ? Colors.black : Colors.white,
+                ),
               ),
-              backgroundColor: AppColors.brandCyan,
+              backgroundColor: isDark
+                  ? Colors.greenAccent
+                  : AppColors.brandCyan,
             ),
           );
         }
       });
+    } else {
+      setState(() => isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final machineData = ref.watch(machineDataProvider);
+
+    // Resolve which value to show: User Selection OR Hardware Value
+    final displayMode = _selectedMode ?? machineData.func;
+    final displayInput1 =
+        _selectedInput1 ?? (machineData.mode == 'V' ? 'Voltage' : 'Current');
+    final displayInput2 =
+        _selectedInput2 ?? (machineData.mode == 'V' ? 'Voltage' : 'Current');
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Padding(
@@ -115,16 +168,16 @@ class _InputScreenState extends ConsumerState<InputScreen> {
           children: [
             AppSelectorCard(
               title: 'Mode ',
-              currentValue: mode,
+              currentValue: displayMode,
               options: ['195', '196'],
               onChanged: (value) => modeChanged(value!),
               icon: Icons.mode,
             ),
             Divider(color: AppColors.darkTextSecondary, thickness: 1),
-            if (mode == '195') ...[
+            if (displayMode == '195') ...[
               AppSelectorCard(
                 title: 'Input',
-                currentValue: input1,
+                currentValue: displayInput1,
                 options: ['Voltage', 'Current'],
                 onChanged: (value) => input1Changed(value!),
                 icon: Icons.input,
@@ -133,7 +186,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
             ] else ...[
               AppSelectorCard(
                 title: 'Input 1',
-                currentValue: input1,
+                currentValue: displayInput1,
                 options: ['Voltage', 'Current'],
                 onChanged: (value) => input1Changed(value!),
                 icon: Icons.input,
@@ -141,7 +194,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
               Divider(color: AppColors.darkTextSecondary, thickness: 1),
               AppSelectorCard(
                 title: 'Input 2',
-                currentValue: input2,
+                currentValue: displayInput2,
                 options: ['Voltage', 'Current'],
                 onChanged: (value) => input2Changed(value!),
                 icon: Icons.input,
@@ -151,7 +204,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
             ElevatedButton(
               onPressed: isLoading
                   ? null
-                  : () => save(ref, mode, input1, input2),
+                  : () => save(ref, displayMode, displayInput1, displayInput2),
               child: Text(isLoading ? 'Saving...' : 'Save'),
             ),
             SizedBox(height: 32),

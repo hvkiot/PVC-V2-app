@@ -36,6 +36,15 @@ class MachineData {
   @JsonKey(name: 'ENABLE_B')
   final bool enableB;
 
+  @JsonKey(name: 'CURRENT_A_STATUS')
+  final String coilACurrent;
+
+  @JsonKey(name: 'CURRENT_B_STATUS')
+  final String coilBCurrent;
+
+  @JsonKey(name: 'CURRENT_STATUS')
+  final String coilCurrent;
+
   MachineData({
     this.func = '0',
     this.inputA = '0.0',
@@ -47,6 +56,9 @@ class MachineData {
     this.pin15 = false,
     this.pin6 = false,
     this.enableB = false,
+    this.coilACurrent = '0.0',
+    this.coilBCurrent = '0.0',
+    this.coilCurrent = '0.0',
   });
 
   // Connect to the generated factory

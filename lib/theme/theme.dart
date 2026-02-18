@@ -86,6 +86,13 @@ class AppTheme {
       type: BottomNavigationBarType.fixed,
       elevation: 8,
     ),
+
+    inputDecorationTheme: const InputDecorationTheme(
+      border: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      contentPadding: EdgeInsets.zero,
+    ),
   );
 
   // --- DARK THEME (Primary: Brand Cyan) ---
@@ -151,6 +158,7 @@ class AppTheme {
       selectedTileColor: AppColors.brandCyan.withValues(alpha: 0.1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
+
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
       backgroundColor: AppColors.darkSurface,
       selectedItemColor: AppColors.brandCyan,
@@ -163,6 +171,15 @@ class AppTheme {
       unselectedLabelStyle: const TextStyle(inherit: true, fontSize: 12),
       type: BottomNavigationBarType.fixed,
       elevation: 0, // Keeps it flat and minimalist for dark mode
+    ),
+
+    inputDecorationTheme: const InputDecorationTheme(
+      border: InputBorder.none,
+      focusedBorder: InputBorder.none,
+      enabledBorder: InputBorder.none,
+      errorBorder: InputBorder.none,
+      disabledBorder: InputBorder.none,
+      contentPadding: EdgeInsets.zero,
     ),
   );
 }
