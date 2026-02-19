@@ -55,11 +55,7 @@ class ConfigTabNotifier extends StateNotifier<ConfigTabState> {
   /// One-way bridge: seed from hardware values.
   /// Once seeded, this will not be called again until after a Save or Reset.
   void seedFromHardware(double coil, double coilA, double coilB) {
-    // GUARD: Don't seed if we are already seeded OR if hardware is sending 0.0
-    if (state.isSeeded) return;
-    if (coil == 0.0 && coilA == 0.0 && coilB == 0.0) return;
-
-    state = ConfigTabState(
+    state = state.copyWith(
       coilCurrent: coil,
       coilACurrent: coilA,
       coilBCurrent: coilB,
@@ -69,14 +65,11 @@ class ConfigTabNotifier extends StateNotifier<ConfigTabState> {
 
   /// Full reset after a successful Save — clears the draft and re-seeds.
   void reset(double coil, double coilA, double coilB) {
-    // Logic inside ConfigTabNotifier
     state = ConfigTabState(
-      // If we are moving to 196, main current is irrelevant, so we force 1000
-      // If we are moving to 195, A and B are irrelevant, so we force 1000
       coilCurrent: coil,
       coilACurrent: coilA,
       coilBCurrent: coilB,
-      isSeeded: true,
+      isSeeded: true, // This tells the UI to stop showing old draft values
     );
   }
 

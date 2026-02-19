@@ -17,137 +17,90 @@ class ConfigScreen extends ConsumerStatefulWidget {
 class _ConfigScreenState extends ConsumerState<ConfigScreen> {
   bool _isSynchronizing = false;
 
-  @override
-  void initState() {
-    super.initState();
-    // Sync local state with hardware current values mainly on first load
-    // or we can leave it to the user.
-    // Better UX: Pre-fill with current hardware values.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final machineData = ref.read(machineDataProvider);
-      final configNotifier = ref.read(configTabProvider.notifier);
-      // We overwrite on init to ensure we start fresh?
-      // "prevents data loss when switching tabs" -> means we SHOULD NOT overwrite if we have edits.
-      // But how do we know if we have edits?
-      // We can check if the provider values are "0.0".
-      // Or we can just let the provider hold the state.
-      // Let's assume on *app* start it's 0.0.
-      // For this task, I will sync ONLY IF the current state is the default '0.0'.
-      final currentState = ref.read(configTabProvider);
-
-      if (currentState.coilCurrent == '0.0' &&
-          currentState.coilACurrent == '0.0' &&
-          currentState.coilBCurrent == '0.0') {
-        configNotifier.reset(
-          machineData.coilCurrent,
-          machineData.coilACurrent,
-          machineData.coilBCurrent,
-        );
-      }
-    });
-  }
-
-  void saveConfig() async {
+  void _saveConfig() async {
     final machineData = ref.read(machineDataProvider);
     final configState = ref.read(configTabProvider);
     final bleNotifier = ref.read(bleProvider.notifier);
     final configNotifier = ref.read(configTabProvider.notifier);
-    final overlayNotifer = ref.read(processingOverlayProvider.notifier);
     final messageNotifier = ref.read(globalMessageProvider.notifier);
+    final overlayNotifier = ref.read(processingOverlayProvider.notifier);
 
     final String mode = machineData.func;
 
-    // 1. Safety Validation: Pin 15 check
     if (machineData.pin15) {
       messageNotifier.showError("PIN 15 is Active - Disable to edit");
       return;
     }
 
-    // 2. Context-Aware & Range Validation
-    bool isInputValid = false;
+    bool isValid(double val) => val.round() >= 500 && val.round() <= 2600;
 
-    // Helper to validate string
-    bool isValid(String val) {
-      final d = double.tryParse(val);
-      if (d == null) return false;
-      final i = d.round();
-      return i >= 500 && i <= 2600;
-    }
-
+    // Validate only the values that have been actively edited (> 0)
     if (mode == '195') {
-      isInputValid = isValid(configState.coilCurrent);
-      if (!isInputValid) {
-        messageNotifier.showError(
-          "Input value out of operational range (500mA - 2600mA)",
-        );
+      final checkVal = configState.coilCurrent > 0
+          ? configState.coilCurrent
+          : machineData.coilCurrent;
+      if (!isValid(checkVal)) {
+        messageNotifier.showError("Input out of range (500mA - 2600mA)");
         return;
       }
     } else {
-      // Mode 196
-      if (!isValid(configState.coilACurrent) ||
-          !isValid(configState.coilBCurrent)) {
-        messageNotifier.showError(
-          "Input value out of operational range (500mA - 2600mA)",
-        );
+      final checkA = configState.coilACurrent > 0
+          ? configState.coilACurrent
+          : machineData.coilACurrent;
+      final checkB = configState.coilBCurrent > 0
+          ? configState.coilBCurrent
+          : machineData.coilBCurrent;
+      if (!isValid(checkA) || !isValid(checkB)) {
+        messageNotifier.showError("Input out of range (500mA - 2600mA)");
         return;
       }
     }
 
-    // Start Loading
-    overlayNotifer.state = true;
+    overlayNotifier.state = true;
     setState(() => _isSynchronizing = true);
 
-    // 3. Command Preparation
     List<String> commandsToSend = [];
     if (mode == '195') {
-      if (configState.coilCurrent != machineData.coilCurrent) {
-        commandsToSend.add(
-          "CUR:${double.parse(configState.coilCurrent).round()}:195",
-        );
+      if (configState.coilCurrent > 0 &&
+          configState.coilCurrent.round() != machineData.coilCurrent.round()) {
+        commandsToSend.add("CUR:${configState.coilCurrent.round()}:195");
       }
     } else {
-      if (configState.coilACurrent != machineData.coilACurrent) {
-        commandsToSend.add(
-          "CURA:${double.parse(configState.coilACurrent).round()}:196",
-        );
+      if (configState.coilACurrent > 0 &&
+          configState.coilACurrent.round() !=
+              machineData.coilACurrent.round()) {
+        commandsToSend.add("CURA:${configState.coilACurrent.round()}:196");
       }
-      if (configState.coilBCurrent != machineData.coilBCurrent) {
-        commandsToSend.add(
-          "CURB:${double.parse(configState.coilBCurrent).round()}:196",
-        );
+      if (configState.coilBCurrent > 0 &&
+          configState.coilBCurrent.round() !=
+              machineData.coilBCurrent.round()) {
+        commandsToSend.add("CURB:${configState.coilBCurrent.round()}:196");
       }
     }
 
     if (commandsToSend.isEmpty) {
-      overlayNotifer.state = false;
+      overlayNotifier.state = false;
+      setState(() => _isSynchronizing = false);
       messageNotifier.showSuccess("No changes detected.");
       return;
     }
 
-    // 4. Sequential Send
     bool allSuccess = true;
-    for (int i = 0; i < commandsToSend.length; i++) {
-      bool success = await bleNotifier.writeToCharacteristic(commandsToSend[i]);
-
+    for (String cmd in commandsToSend) {
+      bool success = await bleNotifier.writeToCharacteristic(cmd);
       if (!success) {
         allSuccess = false;
         break;
       }
-
-      // Hardware delay
       await Future.delayed(const Duration(milliseconds: 3500));
     }
 
-    overlayNotifer.state = false;
+    overlayNotifier.state = false;
     setState(() => _isSynchronizing = false);
 
     if (allSuccess) {
-      // State Restoration: clear local overrides, force re-read from hardware
-      configNotifier.reset(
-        machineData.coilCurrent,
-        machineData.coilACurrent,
-        machineData.coilBCurrent,
-      );
+      // SUCCESS! Wipe the UI drafts back to 0.0 so the screen snaps back to following the hardware truth
+      configNotifier.reset(0.0, 0.0, 0.0);
       messageNotifier.showSuccess("Configuration written to EEPROM");
     } else {
       messageNotifier.showError("EEPROM write failed — transaction aborted");
@@ -156,6 +109,14 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 1. DYNAMIC MODE LISTENER
+    ref.listen<String>(machineDataProvider.select((d) => d.func), (prev, next) {
+      if (prev != null && prev != next) {
+        // Mode changed! Wipe the UI drafts entirely so no old values leak into the new mode.
+        ref.read(configTabProvider.notifier).reset(0.0, 0.0, 0.0);
+      }
+    });
+
     final machineData = ref.watch(machineDataProvider);
     final configState = ref.watch(configTabProvider);
     final configNotifier = ref.read(configTabProvider.notifier);
@@ -164,23 +125,35 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     final String mode = machineData.func;
     final bool isPin15Active = machineData.pin15;
 
-    // Dirty Check Logic
+    // 2. BULLETPROOF DISPLAY RESOLUTION
+    // If the UI draft is 0, fall back to Machine Truth. If > 0, show User's Draft.
+    final double displayA = configState.coilACurrent > 0
+        ? configState.coilACurrent
+        : machineData.coilACurrent;
+    final double displayB = configState.coilBCurrent > 0
+        ? configState.coilBCurrent
+        : machineData.coilBCurrent;
+    final double displayMain = configState.coilCurrent > 0
+        ? configState.coilCurrent
+        : machineData.coilCurrent;
+
+    // 4. Robust Dirty Check
+
     bool isDirty = false;
+
     if (mode == '195') {
-      isDirty = configState.coilCurrent != machineData.coilCurrent;
+      isDirty = displayMain.round() != machineData.coilCurrent.round();
     } else {
       isDirty =
-          (configState.coilACurrent != machineData.coilACurrent) ||
-          (configState.coilBCurrent != machineData.coilBCurrent);
+          (displayA.round() != machineData.coilACurrent.round()) ||
+          (displayB.round() != machineData.coilBCurrent.round());
     }
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Mode Indicator
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(8.0),
@@ -197,7 +170,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                     ),
                     if (isPin15Active) ...[
                       const SizedBox(width: 10),
-                      Text(
+                      const Text(
                         '(LOCKED)',
                         style: TextStyle(
                           color: AppColors.brandRed,
@@ -221,15 +194,15 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                   ),
                 ),
               ),
-
             const SizedBox(height: 10),
-
             if (mode == '195') ...[
               AppTextCard(
                 title: 'COIL Output Current',
-                currentValue: configState.coilCurrent,
-                onChanged: (value) => {
-                  if (value != null) configNotifier.setCoilCurrent(value),
+                currentValue: displayMain,
+                onChanged: (value) {
+                  if (value != null) {
+                    configNotifier.setCoilCurrent(value);
+                  }
                 },
                 icon: Icons.settings_input_component,
                 enabled: !isPin15Active,
@@ -237,9 +210,11 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
             ] else ...[
               AppTextCard(
                 title: 'COIL A Output Current',
-                currentValue: configState.coilACurrent,
-                onChanged: (value) => {
-                  if (value != null) configNotifier.setCoilACurrent(value),
+                currentValue: displayA,
+                onChanged: (value) {
+                  if (value != null) {
+                    configNotifier.setCoilACurrent(value);
+                  }
                 },
                 icon: Icons.settings_input_component,
                 enabled: !isPin15Active,
@@ -250,24 +225,26 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
               ),
               AppTextCard(
                 title: 'COIL B Output Current',
-                currentValue: configState.coilBCurrent,
-                onChanged: (value) => {
-                  if (value != null) configNotifier.setCoilBCurrent(value),
+                currentValue: displayB,
+                onChanged: (value) {
+                  if (value != null) {
+                    configNotifier.setCoilBCurrent(value);
+                  }
                 },
                 icon: Icons.settings_input_component,
                 enabled: !isPin15Active,
               ),
             ],
-            Spacer(),
+            const Spacer(),
             ElevatedButton(
               onPressed: (isDirty && !isPin15Active && !_isSynchronizing)
-                  ? () => saveConfig()
+                  ? _saveConfig
                   : null,
               child: Text(
                 _isSynchronizing ? 'Synchronizing...' : 'Save Config',
               ),
             ),
-            SizedBox(height: 32),
+            const SizedBox(height: 32),
           ],
         ),
       ),

@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 
 class AppTextCard extends StatefulWidget {
   final String title;
-  final String currentValue;
-  final ValueChanged<String?> onChanged;
+  final double currentValue;
+  final ValueChanged<double?> onChanged;
   final IconData icon;
   final bool enabled;
 
@@ -29,7 +29,7 @@ class _AppTextCardState extends State<AppTextCard> {
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.currentValue);
+    _controller = TextEditingController(text: widget.currentValue.toString());
     _focusNode.addListener(_onFocusChange);
   }
 
@@ -45,8 +45,8 @@ class _AppTextCardState extends State<AppTextCard> {
     // live-feed from "stealing" text while the user is typing.
     if (!_hasFocus &&
         oldWidget.currentValue != widget.currentValue &&
-        _controller.text != widget.currentValue) {
-      _controller.text = widget.currentValue;
+        _controller.text != widget.currentValue.toStringAsFixed(1)) {
+      _controller.text = widget.currentValue.toStringAsFixed(1);
     }
   }
 
@@ -130,7 +130,7 @@ class _AppTextCardState extends State<AppTextCard> {
                   textAlign: TextAlign.center,
                   decoration: const InputDecoration(border: InputBorder.none),
                   onChanged: (value) {
-                    widget.onChanged(value);
+                    widget.onChanged(double.tryParse(value));
                   },
                 ),
               ),
