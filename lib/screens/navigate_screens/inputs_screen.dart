@@ -4,7 +4,6 @@ import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
-import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/app_selector_card.dart';
 
 class InputScreen extends ConsumerStatefulWidget {
@@ -84,7 +83,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
         allSuccess = false;
         break;
       }
-      await Future.delayed(const Duration(milliseconds: 1500));
+      await Future.delayed(const Duration(seconds: 4));
     }
 
     overlayNotifier.state = false;
@@ -147,7 +146,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                   "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.brandRed,
+                    color: theme.colorScheme.error,
                     fontStyle: FontStyle.italic,
                   ),
                 ),

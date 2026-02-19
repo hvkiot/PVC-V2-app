@@ -23,17 +23,28 @@ class AppTextCard extends StatefulWidget {
 
 class _AppTextCardState extends State<AppTextCard> {
   late TextEditingController _controller;
+  final FocusNode _focusNode = FocusNode();
+  bool _hasFocus = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.currentValue);
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    setState(() => _hasFocus = _focusNode.hasFocus);
   }
 
   @override
   void didUpdateWidget(AppTextCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.currentValue != widget.currentValue &&
+    // Focus Preservation: Only accept incoming value updates
+    // when the keyboard is NOT active. This prevents the hardware
+    // live-feed from "stealing" text while the user is typing.
+    if (!_hasFocus &&
+        oldWidget.currentValue != widget.currentValue &&
         _controller.text != widget.currentValue) {
       _controller.text = widget.currentValue;
     }
@@ -41,6 +52,8 @@ class _AppTextCardState extends State<AppTextCard> {
 
   @override
   void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -48,8 +61,6 @@ class _AppTextCardState extends State<AppTextCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Use surfaceVariant for light mode as requested in requirement 1.3
-    // "In Light Mode, use surfaceVariant with a clear primary border"
     final surfaceColor = theme.brightness == Brightness.light
         ? theme.colorScheme.surfaceContainer
         : theme.cardTheme.color;
@@ -106,6 +117,7 @@ class _AppTextCardState extends State<AppTextCard> {
                 ),
                 child: TextField(
                   enabled: widget.enabled,
+                  focusNode: _focusNode,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -118,15 +130,6 @@ class _AppTextCardState extends State<AppTextCard> {
                   textAlign: TextAlign.center,
                   decoration: const InputDecoration(border: InputBorder.none),
                   onChanged: (value) {
-                    // Auto-rounding logic upon completion is harder in onChanged,
-                    // but we can ensure valid structure here.
-                    // The actual rounding happens in the parent logic or on submit/blur,
-                    // but the requirement "automatically rounds decimals before they reach the controller logic"
-                    // implies we might want to sanitize it here before sending up.
-                    // However, UX-wise, rounding while typing is jarring.
-                    // We'll let the parent handle the parsing/rounding logic as requested,
-                    // or do it here if we want to force it.
-                    // "restricts inputs to numeric values" -> Done with inputFormatters
                     widget.onChanged(value);
                   },
                 ),

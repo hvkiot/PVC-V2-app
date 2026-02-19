@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
 import 'package:pvc_v2/screens/navigate_screens/config_screen.dart';
@@ -59,6 +60,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _onItemTapped(int index) {
+    // Use ref.read to check connection status without a full rebuild here
+    final isConnected = ref.read(bleProvider).connectedDevice != null;
+
+    // Rule: Allow index 0 (Dashboard) always, but block others if disconnected
+    if (!isConnected && index != 0) {
+      ref
+          .read(globalMessageProvider.notifier)
+          .showError("COMMUNICATION LOSS: Reconnect to access this module");
+      return; // Exit function, preventing the tab change
+    }
     setState(() {
       _currentIndex = index;
     });
@@ -105,41 +116,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // 2. Watch Processing Overlay State
     final isProcessing = ref.watch(processingOverlayProvider);
+    final bleState = ref.watch(bleProvider);
+    final isConnected = bleState.connectedDevice == device;
+    final theme = Theme.of(context);
 
-    return Stack(
-      children: [
-        Scaffold(
-          key: _scaffoldKey,
-          endDrawer: const CustomDrawer(),
-          appBar: CustomAppBar(
-            title: title(),
-            actions: [
-              if (_currentIndex == 0)
-                IconButton(
-                  icon: const Icon(Icons.menu, size: 36),
-                  onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                ),
-            ],
-          ),
-          body: _children[_currentIndex],
-          bottomNavigationBar: BottomNavigationBar(
-            items: _bottomNavigationBarItems,
-            currentIndex: _currentIndex,
-            onTap: _onItemTapped,
-          ),
+    return Scaffold(
+      key: _scaffoldKey,
+      endDrawer: const CustomDrawer(),
+      appBar: CustomAppBar(
+        title: title(),
+        preferredSizeChild: PreferredSize(
+          preferredSize: const Size.fromHeight(kToolbarHeight),
+          child: isProcessing
+              ? LinearProgressIndicator(
+                  color: theme.colorScheme.primary,
+                  backgroundColor: theme.colorScheme.onSurface.withValues(
+                    alpha: 0.38,
+                  ),
+                )
+              : Container(),
         ),
-        // 3. Processing Overlay
-        if (isProcessing)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: LinearProgressIndicator(
-              color: AppColors.brandCyan,
-              backgroundColor: AppColors.brandBlue.withAlpha(50),
+        actions: [
+          if (_currentIndex == 0)
+            IconButton(
+              icon: const Icon(Icons.menu, size: 36),
+
+              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
             ),
-          ),
-      ],
+        ],
+      ),
+      body: _children[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        items: _bottomNavigationBarItems,
+        currentIndex: _currentIndex,
+        onTap: _onItemTapped,
+        // UI FEEDBACK: Dim the bar when disconnected
+        selectedItemColor: isConnected
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurface.withValues(alpha: 0.38),
+        unselectedItemColor: theme.colorScheme.onSurface.withValues(
+          alpha: 0.38,
+        ),
+
+        // Disable visual "ink" splashes when disconnected
+        enableFeedback: isConnected,
+      ),
     );
   }
 }

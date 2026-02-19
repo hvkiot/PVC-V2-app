@@ -2,25 +2,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // --- CONFIGURATION TAB STATE ---
 class ConfigTabState {
-  final String coilCurrent; // For Mode 195
-  final String coilACurrent; // For Mode 196
-  final String coilBCurrent; // For Mode 196
+  final double coilCurrent; // For Mode 195
+  final double coilACurrent; // For Mode 196
+  final double coilBCurrent; // For Mode 196
+  final bool isSeeded; // True once hardware values have been bridged in
 
   const ConfigTabState({
-    this.coilCurrent = '0.0',
-    this.coilACurrent = '0.0',
-    this.coilBCurrent = '0.0',
+    this.coilCurrent = 0.0,
+    this.coilACurrent = 0.0,
+    this.coilBCurrent = 0.0,
+    this.isSeeded = false,
   });
 
   ConfigTabState copyWith({
-    String? coilCurrent,
-    String? coilACurrent,
-    String? coilBCurrent,
+    double? coilCurrent,
+    double? coilACurrent,
+    double? coilBCurrent,
+    bool? isSeeded,
   }) {
     return ConfigTabState(
       coilCurrent: coilCurrent ?? this.coilCurrent,
       coilACurrent: coilACurrent ?? this.coilACurrent,
       coilBCurrent: coilBCurrent ?? this.coilBCurrent,
+      isSeeded: isSeeded ?? this.isSeeded,
     );
   }
 }
@@ -29,25 +33,56 @@ class ConfigTabState {
 class ConfigTabNotifier extends StateNotifier<ConfigTabState> {
   ConfigTabNotifier() : super(const ConfigTabState());
 
-  void setCoilCurrent(String value) {
+  void setCoilCurrent(double value) {
     state = state.copyWith(coilCurrent: value);
   }
 
-  void setCoilACurrent(String value) {
+  void setCoilACurrent(double value) {
     state = state.copyWith(coilACurrent: value);
   }
 
-  void setCoilBCurrent(String value) {
+  void setCoilBCurrent(double value) {
     state = state.copyWith(coilBCurrent: value);
   }
 
-  // Reset to machine values
-  void reset(String coil, String coilA, String coilB) {
+  // Inside ConfigTabNotifier
+  void handleModeChange() {
+    // Clear the seed so the UI is forced to accept
+    // the new 1000mA defaults from the next hardware packet.
+    state = state.copyWith(isSeeded: false);
+  }
+
+  /// One-way bridge: seed from hardware values.
+  /// Once seeded, this will not be called again until after a Save or Reset.
+  void seedFromHardware(double coil, double coilA, double coilB) {
+    // GUARD: Don't seed if we are already seeded OR if hardware is sending 0.0
+    if (state.isSeeded) return;
+    if (coil == 0.0 && coilA == 0.0 && coilB == 0.0) return;
+
     state = ConfigTabState(
       coilCurrent: coil,
       coilACurrent: coilA,
       coilBCurrent: coilB,
+      isSeeded: true,
     );
+  }
+
+  /// Full reset after a successful Save — clears the draft and re-seeds.
+  void reset(double coil, double coilA, double coilB) {
+    // Logic inside ConfigTabNotifier
+    state = ConfigTabState(
+      // If we are moving to 196, main current is irrelevant, so we force 1000
+      // If we are moving to 195, A and B are irrelevant, so we force 1000
+      coilCurrent: coil,
+      coilACurrent: coilA,
+      coilBCurrent: coilB,
+      isSeeded: true,
+    );
+  }
+
+  /// Mark as un-seeded (e.g. on reconnection or explicit user reset).
+  void clearSeed() {
+    state = const ConfigTabState();
   }
 }
 

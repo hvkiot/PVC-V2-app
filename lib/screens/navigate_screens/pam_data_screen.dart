@@ -3,6 +3,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
+import 'package:pvc_v2/utils/unit_converter.dart';
 
 class PamDataScreen extends ConsumerStatefulWidget {
   final BluetoothDevice device;
@@ -39,18 +40,24 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
     final List<Map<String, String>> sensorData = [
       {
         'title': 'INPUT A',
-        'value':
-            double.tryParse(machineData.inputA)?.toStringAsFixed(1) ?? '0.0',
+        'value': UnitConverter.format(machineData.inputA),
         'unit': unit(machineData.mode),
       },
-      {'title': 'COIL A', 'value': machineData.coilA, 'unit': 'mA'},
+      {
+        'title': 'COIL A',
+        'value': UnitConverter.format(machineData.coilA),
+        'unit': 'mA',
+      },
       {
         'title': 'INPUT B',
-        'value':
-            double.tryParse(machineData.inputB)?.toStringAsFixed(1) ?? '0.0',
+        'value': UnitConverter.format(machineData.inputB),
         'unit': unit(machineData.mode),
       },
-      {'title': 'COIL B', 'value': machineData.coilB, 'unit': 'mA'},
+      {
+        'title': 'COIL B',
+        'value': UnitConverter.format(machineData.coilB),
+        'unit': 'mA',
+      },
     ];
 
     bool led(String ready, bool pin15, bool pin6) {

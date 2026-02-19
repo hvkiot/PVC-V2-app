@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum MessageType { success, error }
+enum MessageType { success, error, warning }
 
 class GlobalMessage {
   final String message;
@@ -11,6 +11,10 @@ class GlobalMessage {
 
 class GlobalMessageNotifier extends StateNotifier<GlobalMessage?> {
   GlobalMessageNotifier() : super(null);
+
+  void showWarning(String message) {
+    state = GlobalMessage(message: message, type: MessageType.warning);
+  }
 
   void showSuccess(String message) {
     state = GlobalMessage(message: message, type: MessageType.success);
