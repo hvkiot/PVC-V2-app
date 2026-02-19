@@ -137,12 +137,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               : Container(),
         ),
         actions: [
-          if (_currentIndex == 0)
-            IconButton(
-              icon: const Icon(Icons.menu, size: 36),
+          IconButton(
+            icon: const Icon(Icons.menu, size: 36),
 
-              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-            ),
+            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+          ),
         ],
       ),
       body: _children[_currentIndex],
