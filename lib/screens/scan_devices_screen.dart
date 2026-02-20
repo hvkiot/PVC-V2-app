@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
+import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
 
@@ -21,19 +23,34 @@ class _AvailableDevicesScreenState
   bool isScanning = false;
   BluetoothDevice? selectedDevice; // Track selection
 
+  BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+  late StreamSubscription<BluetoothAdapterState> _adapterStateSubscription;
+
   @override
   void initState() {
     super.initState();
-    _startScanning();
+    _adapterStateSubscription = FlutterBluePlus.adapterState.listen((state) {
+      if (mounted) {
+        setState(() {
+          _adapterState = state;
+        });
+        if (state == BluetoothAdapterState.on && !isScanning) {
+          _startScanning();
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _adapterStateSubscription.cancel();
     FlutterBluePlus.stopScan();
     super.dispose();
   }
 
   Future<void> _startScanning() async {
+    if (_adapterState != BluetoothAdapterState.on) return;
+
     setState(() {
       isScanning = true;
       validDevices.clear();
@@ -47,15 +64,11 @@ class _AvailableDevicesScreenState
     if (!scanStatus.isGranted ||
         !connectStatus.isGranted ||
         !locationStatus.isGranted) {
-      if (mounted) {
-        setState(() => isScanning = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Bluetooth permissions not granted"),
-            backgroundColor: Color(0xFFF56565),
-          ),
-        );
-      }
+      setState(() => isScanning = false);
+      ref
+          .read(globalMessageProvider.notifier)
+          .showError("Bluetooth permissions not granted");
+
       return;
     }
 
@@ -96,12 +109,10 @@ class _AvailableDevicesScreenState
     } catch (e) {
       if (mounted) {
         setState(() => isScanning = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Scan Error: ${e.toString()}"),
-            backgroundColor: const Color(0xFFF56565),
-          ),
-        );
+        // We handle the "off" state proactively now, so we can likely suppress generic errors or keep them as backup
+        if (!e.toString().contains("turned on")) {
+          ref.read(globalMessageProvider.notifier).showError(e.toString());
+        }
       }
     }
   }
@@ -124,25 +135,24 @@ class _AvailableDevicesScreenState
         } else {
           // Connection failed, show error from the provider state
           final error = ref.read(bleProvider).errorMessage;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error ?? "Connection failed"),
-              backgroundColor: const Color(0xFFF56565),
-            ),
-          );
+          ref
+              .read(globalMessageProvider.notifier)
+              .showError(error ?? "Connection failed");
         }
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: ${e.toString()}")));
-      }
+      final error = e.toString();
+      ref.read(globalMessageProvider.notifier).showError(error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // If bluetooth is off, show the special screen immediately
+    if (_adapterState == BluetoothAdapterState.off) {
+      return _buildBluetoothOffScreen(context);
+    }
+
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Scaffold(
@@ -187,8 +197,6 @@ class _AvailableDevicesScreenState
               ),
               const SizedBox(height: 10),
 
-              // 1. Fixed the ParentDataWidget error by putting Expanded directly in Column
-              // 2. Styled the box to match your sketch
               Expanded(
                 child: Card(
                   margin: const EdgeInsets.symmetric(vertical: 20),
@@ -206,8 +214,68 @@ class _AvailableDevicesScreenState
     );
   }
 
-  // Modified to remove its own Internal Expanded if you prefer,
-  // but keeping it simple for now:
+  Widget _buildBluetoothOffScreen(BuildContext context) {
+    return Scaffold(
+      appBar: const CustomAppBar(title: 'HVK'),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.bluetooth_disabled,
+                size: 100,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Bluetooth is Off',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Please enable Bluetooth to scan for available devices.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  try {
+                    if (Theme.of(context).platform == TargetPlatform.android) {
+                      await FlutterBluePlus.turnOn();
+                    } else {
+                      // iOS doesn't allow programmatically turning on BT, usually we open settings if possible or just show a message,
+                      // but FlutterBluePlus.turnOn() handles Android.
+                      // For simplicity we just try to call it, or we could just rely on the user.
+                      // Since we are reactive, if they pull down control center and enable it, the UI updates automatically.
+                      ref
+                          .read(globalMessageProvider.notifier)
+                          .showError("Please enable Bluetooth in settings");
+                    }
+                  } catch (e) {
+                    ref
+                        .read(globalMessageProvider.notifier)
+                        .showError("Could not turn on Bluetooth");
+                  }
+                },
+                icon: const Icon(Icons.bluetooth),
+                label: const Text('Turn On Bluetooth'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget deviceList() {
     if (validDevices.isEmpty) {
       return Center(
