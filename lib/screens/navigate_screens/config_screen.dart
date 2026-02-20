@@ -4,7 +4,6 @@ import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
-import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/app_text_card.dart';
 
 class ConfigScreen extends ConsumerStatefulWidget {
@@ -170,10 +169,10 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                     ),
                     if (isPin15Active) ...[
                       const SizedBox(width: 10),
-                      const Text(
+                      Text(
                         '(LOCKED)',
                         style: TextStyle(
-                          color: AppColors.brandRed,
+                          color: theme.colorScheme.error,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -189,7 +188,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                   "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.brandRed,
+                    color: theme.colorScheme.error,
                     fontStyle: FontStyle.italic,
                   ),
                 ),
