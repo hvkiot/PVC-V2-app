@@ -85,7 +85,7 @@ class _AppTextCardState extends State<AppTextCard> {
                 color: widget.enabled
                     ? theme.colorScheme.primary
                     : theme.disabledColor,
-                size: 20,
+                size: 28,
               ),
             ),
             const SizedBox(width: 16),
@@ -96,6 +96,7 @@ class _AppTextCardState extends State<AppTextCard> {
                 style: theme.textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.1,
+                  fontSize: 22,
                   color: widget.enabled
                       ? theme.colorScheme.onSurface
                       : theme.disabledColor,
@@ -128,6 +129,12 @@ class _AppTextCardState extends State<AppTextCard> {
                   ],
                   controller: _controller,
                   textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 22,
+                    color: widget.enabled
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.disabledColor,
+                  ),
                   decoration: const InputDecoration(border: InputBorder.none),
                   onChanged: (value) {
                     widget.onChanged(double.tryParse(value));
@@ -139,7 +146,7 @@ class _AppTextCardState extends State<AppTextCard> {
             Text(
               'mA',
               style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 13,
+                fontSize: 22,
                 color: widget.enabled
                     ? theme.colorScheme.onSurfaceVariant
                     : theme.disabledColor,

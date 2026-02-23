@@ -149,15 +149,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         items: _bottomNavigationBarItems,
         currentIndex: _currentIndex,
         onTap: _onItemTapped,
-        // UI FEEDBACK: Dim the bar when disconnected
         selectedItemColor: isConnected
             ? theme.colorScheme.primary
             : theme.colorScheme.onSurface.withValues(alpha: 0.38),
         unselectedItemColor: theme.colorScheme.onSurface.withValues(
           alpha: 0.38,
         ),
-
-        // Disable visual "ink" splashes when disconnected
         enableFeedback: isConnected,
       ),
     );

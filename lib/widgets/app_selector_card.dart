@@ -46,7 +46,7 @@ class AppSelectorCard extends StatelessWidget {
                 color: enabled
                     ? theme.colorScheme.primary
                     : theme.disabledColor,
-                size: 20,
+                size: 28,
               ),
             ),
             const SizedBox(width: 16),
@@ -58,6 +58,7 @@ class AppSelectorCard extends StatelessWidget {
                 style: theme.textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.1,
+                  fontSize: 22,
                   color: enabled
                       ? theme.colorScheme.onSurface
                       : theme.disabledColor,
@@ -87,7 +88,7 @@ class AppSelectorCard extends StatelessWidget {
                           : options.first,
                       icon: Icon(
                         Icons.keyboard_arrow_down_rounded,
-                        size: 18,
+                        size: 22,
                         color: enabled
                             ? theme.colorScheme.primary
                             : theme.disabledColor,
@@ -97,7 +98,7 @@ class AppSelectorCard extends StatelessWidget {
                             ? theme.colorScheme.primary
                             : theme.disabledColor,
                         fontWeight: FontWeight.w900,
-                        fontSize: 14,
+                        fontSize: 22,
                       ),
                       items: options.map((String val) {
                         return DropdownMenuItem<String>(

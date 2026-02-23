@@ -196,7 +196,6 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
           Expanded(
             child: GridView.builder(
-              shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
@@ -230,10 +229,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
                 children: [
                   Expanded(
@@ -286,7 +282,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               data['title']!.toUpperCase(),
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
-                fontSize: 15,
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -297,7 +293,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
                 Text(
                   data['value']!,
                   style: const TextStyle(
-                    fontSize: 24,
+                    fontSize: 32,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -307,6 +303,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
                   child: Text(
                     data['unit']!,
                     style: TextStyle(
+                      fontSize: 18,
                       color: colorScheme.primary,
                       fontWeight: FontWeight.bold,
                     ),
@@ -344,7 +341,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               title.toUpperCase(),
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
-                fontSize: 15,
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.1,
               ),
@@ -384,8 +381,8 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
               child: Text(
                 isActive ? "ACTIVE" : "INACTIVE",
                 style: TextStyle(
+                  fontSize: 18,
                   color: ledColor,
-                  fontSize: 10,
                   fontWeight: FontWeight.w900,
                 ),
               ),

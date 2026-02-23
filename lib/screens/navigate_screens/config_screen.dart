@@ -162,7 +162,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                     Text(
                       'CURRENT MODE: $mode',
                       style: theme.textTheme.labelMedium?.copyWith(
-                        fontSize: 14,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
                       ),
@@ -172,6 +172,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                       Text(
                         '(LOCKED)',
                         style: TextStyle(
+                          fontSize: 24,
                           color: theme.colorScheme.error,
                           fontWeight: FontWeight.bold,
                         ),
@@ -188,6 +189,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                   "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 18,
                     color: theme.colorScheme.error,
                     fontStyle: FontStyle.italic,
                   ),
@@ -241,6 +243,14 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                   : null,
               child: Text(
                 _isSynchronizing ? 'Synchronizing...' : 'Save Config',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                  fontSize: 22,
+                  color: isDirty
+                      ? theme.colorScheme.onSurface
+                      : theme.disabledColor,
+                ),
               ),
             ),
             const SizedBox(height: 32),
