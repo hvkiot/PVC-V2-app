@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,24 +19,32 @@ class AvailableDevicesScreen extends ConsumerStatefulWidget {
       _AvailableDevicesScreenState();
 }
 
-class _AvailableDevicesScreenState
-    extends ConsumerState<AvailableDevicesScreen> {
+class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
+    with WidgetsBindingObserver {
   final List<BluetoothDevice> validDevices = [];
   bool isScanning = false;
   BluetoothDevice? selectedDevice; // Track selection
 
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
   late StreamSubscription<BluetoothAdapterState> _adapterStateSubscription;
+  bool _isLocationServiceEnabled = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkLocationService();
+    });
+
     _adapterStateSubscription = FlutterBluePlus.adapterState.listen((state) {
       if (mounted) {
         setState(() {
           _adapterState = state;
         });
-        if (state == BluetoothAdapterState.on && !isScanning) {
+        if (state == BluetoothAdapterState.on &&
+            _isLocationServiceEnabled &&
+            !isScanning) {
           _startScanning();
         }
       }
@@ -43,13 +53,51 @@ class _AvailableDevicesScreenState
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _adapterStateSubscription.cancel();
     FlutterBluePlus.stopScan();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkLocationService();
+      });
+    }
+  }
+
+  Future<void> _checkLocationService() async {
+    // Bluetooth scanning requires Location Services to be enabled on Android
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final status = await Permission.location.serviceStatus;
+      if (mounted) {
+        setState(() {
+          _isLocationServiceEnabled = status.isEnabled;
+        });
+        if (status.isEnabled &&
+            _adapterState == BluetoothAdapterState.on &&
+            !isScanning) {
+          _startScanning();
+        }
+      }
+    }
+  }
+
   Future<void> _startScanning() async {
     if (_adapterState != BluetoothAdapterState.on) return;
+
+    // Double check location service on Android
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final status = await Permission.location.serviceStatus;
+      if (!status.isEnabled) {
+        if (mounted) {
+          setState(() => _isLocationServiceEnabled = false);
+        }
+        return;
+      }
+    }
 
     setState(() {
       isScanning = true;
@@ -146,11 +194,27 @@ class _AvailableDevicesScreenState
     }
   }
 
+  Future<void> openLocationSettings() async {
+    try {
+      const intent = AndroidIntent(
+        action: 'android.settings.LOCATION_SOURCE_SETTINGS',
+      );
+      await intent.launch();
+    } catch (e) {
+      await openAppSettings();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // If bluetooth is off, show the special screen immediately
     if (_adapterState == BluetoothAdapterState.off) {
       return _buildBluetoothOffScreen(context);
+    }
+
+    // If location is off (on Android), show the special screen
+    if (!_isLocationServiceEnabled) {
+      return _buildLocationOffScreen(context);
     }
 
     final theme = Theme.of(context);
@@ -214,6 +278,53 @@ class _AvailableDevicesScreenState
     );
   }
 
+  Widget _buildLocationOffScreen(BuildContext context) {
+    return Scaffold(
+      appBar: const CustomAppBar(title: 'HVK'),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.location_off,
+                size: 100,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Location is Off',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Location services are required to scan for available devices on this platform.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  // This will open the system location settings screen directly
+                  await openLocationSettings();
+                },
+                icon: const Icon(Icons.settings),
+                label: const Text('Open Settings'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBluetoothOffScreen(BuildContext context) {
     return Scaffold(
       appBar: const CustomAppBar(title: 'HVK'),
@@ -243,7 +354,7 @@ class _AvailableDevicesScreenState
               ElevatedButton.icon(
                 onPressed: () async {
                   try {
-                    if (Theme.of(context).platform == TargetPlatform.android) {
+                    if (defaultTargetPlatform == TargetPlatform.android) {
                       await FlutterBluePlus.turnOn();
                     } else {
                       // iOS doesn't allow programmatically turning on BT, usually we open settings if possible or just show a message,
