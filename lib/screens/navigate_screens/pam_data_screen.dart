@@ -326,9 +326,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     // Use Brand Cyan for the glow if active, otherwise a muted grey
     final ledColor = isActive
-        ? isDark
-              ? AppColors.brandCyan
-              : AppColors.brandRed
+        ? AppColors.brandGreen
         : Theme.of(context).disabledColor;
 
     return Card(

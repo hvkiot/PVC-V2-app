@@ -22,4 +22,5 @@ class AppColors {
   static const Color mutedErrorRed = Color(
     0xFFCF6679,
   ); // Muted red for dark-mode errors
+  static const Color brandGreen = Color(0xFF4CAF50);
 }
