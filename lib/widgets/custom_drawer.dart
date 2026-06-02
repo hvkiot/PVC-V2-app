@@ -56,22 +56,22 @@ class CustomDrawer extends ConsumerWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _DrawerItem(
-                  icon: Icons.save_outlined,
-                  label: 'SAVE CONFIG',
-                  onTap: () => Navigator.pop(context),
-                ),
-                _DrawerItem(
-                  icon: Icons.history_outlined,
-                  label: 'LOAD CONFIG',
-                  onTap: () => Navigator.pop(context),
-                ),
-                _DrawerItem(
-                  icon: Icons.drive_file_rename_outline_outlined,
-                  label: 'RENAME CONFIG',
-                  onTap: () => Navigator.pop(context),
-                ),
-                Divider(color: colorScheme.onSurface.withAlpha(25)),
+                // _DrawerItem(
+                //   icon: Icons.save_outlined,
+                //   label: 'SAVE CONFIG',
+                //   onTap: () => Navigator.pop(context),
+                // ),
+                // _DrawerItem(
+                //   icon: Icons.history_outlined,
+                //   label: 'LOAD CONFIG',
+                //   onTap: () => Navigator.pop(context),
+                // ),
+                // _DrawerItem(
+                //   icon: Icons.drive_file_rename_outline_outlined,
+                //   label: 'RENAME CONFIG',
+                //   onTap: () => Navigator.pop(context),
+                // ),
+                // Divider(color: colorScheme.onSurface.withAlpha(25)),
                 _DrawerItem(
                   icon: Icons.bluetooth_disabled_outlined,
                   label: 'DISCONNECT DEVICE',

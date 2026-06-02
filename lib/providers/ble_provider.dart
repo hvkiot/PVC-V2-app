@@ -139,8 +139,12 @@ class BleNotifier extends Notifier<BleState> {
         if (s == BluetoothConnectionState.disconnected &&
             !_isManualDisconnect) {
           logger.w("Unexpected disconnect — retrying...");
-          await Future.delayed(const Duration(seconds: 2));
-          connectToDevice(device);
+          // await Future.delayed(const Duration(seconds: 2));
+          // connectToDevice(device);
+        }
+        if (s == BluetoothConnectionState.connected) {
+          // Reset manual disconnect flag on successful connection
+          _isManualDisconnect = false;
         }
       });
 
