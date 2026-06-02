@@ -1,4 +1,4 @@
-package com.example.pvc_v2
+package com.hvksystems.pvc
 
 import io.flutter.embedding.android.FlutterActivity
 
