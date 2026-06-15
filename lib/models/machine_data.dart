@@ -49,6 +49,9 @@ class MachineData {
   @JsonKey(name: 'CURRENT_STATUS')
   final double coilCurrent;
 
+  @JsonKey(name: 'FIRMWARE_VERSION')
+  final String firmwareVersion;
+
   MachineData({
     this.func = '0',
     this.inputA = 0.0,
@@ -63,6 +66,7 @@ class MachineData {
     this.coilACurrent = 0.0,
     this.coilBCurrent = 0.0,
     this.coilCurrent = 0.0,
+    this.firmwareVersion = '0.0.0',
   });
 
   // Connect to the generated factory

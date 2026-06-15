@@ -5,6 +5,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
+import 'package:pvc_v2/screens/ota_screens/ota_screen.dart';
 import 'package:pvc_v2/screens/scan_devices_screen.dart';
 import 'package:pvc_v2/screens/home_screen.dart';
 
@@ -25,6 +26,10 @@ final GoRouter router = GoRouter(
             final device = state.extra as BluetoothDevice;
             return HomeScreen(device: device);
           },
+        ),
+        GoRoute(
+          path: AppRoutes.ota,
+          builder: (context, state) => const OtaScreen(),
         ),
       ],
     ),

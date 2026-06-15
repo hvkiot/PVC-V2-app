@@ -21,30 +21,22 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
   @override
   void dispose() {
+    _connSub?.cancel();
     _updateTimer?.cancel();
     _hasNavigatedBack = true;
     super.dispose();
   }
 
+  StreamSubscription<BluetoothConnectionState>? _connSub;
   bool _hasNavigatedBack = false;
 
   @override
   void initState() {
     super.initState();
-    // Start monitoring connection state
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _monitorConnectionState();
-    });
-  }
-
-  void _monitorConnectionState() {
-    // Check if device is disconnected and it's not a manual disconnect
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final currentState = ref.read(bleProvider);
-
-      // If the connected device is null or different from our device, navigate back
-      if (currentState.connectedDevice != widget.device &&
-          currentState.connState == BluetoothConnectionState.disconnected &&
+    // Listen to connection state changes on the device directly
+    _connSub = widget.device.connectionState.listen((state) {
+      if (!mounted) return;
+      if (state == BluetoothConnectionState.disconnected &&
           !_hasNavigatedBack) {
         _navigateBackToScan();
       }
@@ -142,12 +134,6 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
         return true;
       }
       return false;
-    }
-
-    if (bleState.connectedDevice != device &&
-        bleState.connState == BluetoothConnectionState.disconnected &&
-        !_hasNavigatedBack) {
-      _navigateBackToScan();
     }
 
     return Scaffold(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
+import 'package:pvc_v2/routes/static_routes.dart';
 
 class CustomDrawer extends ConsumerWidget {
   const CustomDrawer({super.key});
@@ -9,6 +11,7 @@ class CustomDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final machineData = ref.watch(machineDataProvider);
 
     return Drawer(
       backgroundColor: colorScheme.surface,
@@ -71,7 +74,15 @@ class CustomDrawer extends ConsumerWidget {
                 //   label: 'RENAME CONFIG',
                 //   onTap: () => Navigator.pop(context),
                 // ),
-                // Divider(color: colorScheme.onSurface.withAlpha(25)),
+                _DrawerItem(
+                  icon: Icons.system_update,
+                  label: 'Firmware Update',
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go(AppRoutes.ota);
+                  },
+                ),
+                Divider(color: colorScheme.onSurface.withAlpha(25)),
                 _DrawerItem(
                   icon: Icons.bluetooth_disabled_outlined,
                   label: 'DISCONNECT DEVICE',
@@ -89,7 +100,7 @@ class CustomDrawer extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text(
-              'PVC Firmware v2.0.1',
+              'PVC Firmware v${machineData.firmwareVersion}',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

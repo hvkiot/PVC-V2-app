@@ -213,7 +213,7 @@ class BleNotifier extends Notifier<BleState> {
 
                 characteristic.onValueReceived.listen((value) {
                   final decoded = utf8.decode(value, allowMalformed: true);
-                  // logger.d("Received BLE Data: $decoded");
+                  logger.d("Received BLE Data: $decoded");
                   state = state.copyWith(characteristicValue: decoded);
                 });
 
@@ -228,9 +228,6 @@ class BleNotifier extends Notifier<BleState> {
         }
       }
 
-      logger.w(
-        "Target Service $serviceUuid or Characteristic $charUuid not found on device",
-      );
       state = state.copyWith(errorMessage: "Service not found - check logs");
     } catch (e) {
       logger.e("Error discovering services", error: e);

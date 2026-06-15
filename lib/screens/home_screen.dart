@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/routes/static_routes.dart';
 import 'package:pvc_v2/screens/navigate_screens/config_screen.dart';
 import 'package:pvc_v2/screens/navigate_screens/inputs_screen.dart';
 import 'package:pvc_v2/screens/navigate_screens/pam_data_screen.dart';
@@ -119,12 +121,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bleState = ref.watch(bleProvider);
     final isConnected = bleState.connectedDevice == device;
     final theme = Theme.of(context);
+    final pamIsConnected = ref.watch(machineDataProvider).func == "None"
+        ? false
+        : true;
 
     return Scaffold(
       key: _scaffoldKey,
       endDrawer: const CustomDrawer(),
       appBar: CustomAppBar(
-        title: title(),
+        title: pamIsConnected ? title() : "PAM NOT CONNECTED",
         preferredSizeChild: PreferredSize(
           preferredSize: const Size.fromHeight(kToolbarHeight),
           child: isProcessing
@@ -137,26 +142,209 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               : Container(),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.menu, size: 36),
+          pamIsConnected
+              ? IconButton(
+                  icon: const Icon(Icons.menu, size: 36),
 
-            onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-          ),
+                  onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                )
+              : SizedBox.shrink(),
         ],
       ),
-      body: _children[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        items: _bottomNavigationBarItems,
-        currentIndex: _currentIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: isConnected
-            ? theme.colorScheme.primary
-            : theme.colorScheme.onSurface.withValues(alpha: 0.38),
-        unselectedItemColor: theme.colorScheme.onSurface.withValues(
-          alpha: 0.38,
+      body: pamIsConnected ? _children[_currentIndex] : _buildNoPamScreen(),
+      bottomNavigationBar: pamIsConnected
+          ? BottomNavigationBar(
+              items: _bottomNavigationBarItems,
+              currentIndex: _currentIndex,
+              onTap: _onItemTapped,
+              selectedItemColor: isConnected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface.withValues(alpha: 0.38),
+              unselectedItemColor: theme.colorScheme.onSurface.withValues(
+                alpha: 0.38,
+              ),
+              enableFeedback: isConnected,
+            )
+          : null,
+    );
+  }
+
+  Widget _buildNoPamScreen() {
+    final theme = Theme.of(context);
+    final bleState = ref.watch(bleProvider);
+    final isConnecting = bleState.isConnecting;
+    final device = widget.device;
+    final bleNotifier = ref.read(bleProvider.notifier);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Animated icon
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 800),
+              builder: (context, value, child) {
+                return Transform.scale(
+                  scale: value,
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.error.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.usb_off_rounded,
+                      size: 80,
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 32),
+
+            // Title
+            Text(
+              "PAM NOT CONNECTED",
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.5,
+                color: theme.colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Description
+            Text(
+              "The PAM module is not detected. Please check the USB connection between ESP32 and PAM device.",
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Status card
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerHighest,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.usb,
+                          size: 20,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Troubleshooting Tips:",
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildTipItem(
+                      "Check USB cable is properly connected",
+                      Icons.usb,
+                      theme,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTipItem(
+                      "Disconnect and reconnect the USB cable",
+                      Icons.power_settings_new,
+                      theme,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Retry button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: isConnecting
+                    ? null
+                    : () async {
+                        ref
+                            .read(globalMessageProvider.notifier)
+                            .showError("Reconnecting to PAM...");
+                        // Reconnect logic - you may need to reinitialize USB Host
+                        // For now, just reset the connection or reload the device
+                        await bleNotifier.connectToDevice(device);
+                        if (!mounted) return;
+                      },
+                icon: isConnecting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                label: Text(
+                  isConnecting ? "CONNECTING TO PAM..." : "RETRY CONNECTION",
+                ),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Back button
+            TextButton.icon(
+              onPressed: () async {
+                final notifier = ref.read(bleProvider.notifier);
+                final currentDevice = ref.read(bleProvider).connectedDevice;
+                if (currentDevice?.remoteId == device.remoteId) {
+                  await notifier.disconnectFromDevice();
+                }
+                if (!mounted) return; // ← ADD THIS before using context
+                context.go(AppRoutes.home);
+              },
+              icon: const Icon(Icons.arrow_back),
+              label: const Text("BACK TO DEVICE SCAN"),
+            ),
+          ],
         ),
-        enableFeedback: isConnected,
       ),
+    );
+  }
+
+  // Helper widget for tips
+  Widget _buildTipItem(String text, IconData icon, ThemeData theme) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: theme.colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
