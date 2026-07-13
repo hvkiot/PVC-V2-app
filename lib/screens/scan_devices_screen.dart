@@ -33,6 +33,7 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    validDevices.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLocationService();
     });
@@ -51,11 +52,22 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     });
   }
 
+  /// Clear stale devices when the previously connected device disconnects
+  void _onBleDisconnect(BluetoothDevice? prevDevice) {
+    if (prevDevice != null && mounted) {
+      validDevices.clear();
+      if (!isScanning) {
+        _startScanning();
+      }
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _adapterStateSubscription.cancel();
     FlutterBluePlus.stopScan();
+    validDevices.clear();
     super.dispose();
   }
 
@@ -207,6 +219,13 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Clear stale devices when the previously connected device disconnects
+    ref.listen(bleProvider, (prev, next) {
+      if (prev?.connectedDevice != null && next.connectedDevice == null) {
+        _onBleDisconnect(prev?.connectedDevice);
+      }
+    });
+
     // If bluetooth is off, show the special screen immediately
     if (_adapterState == BluetoothAdapterState.off) {
       return _buildBluetoothOffScreen(context);

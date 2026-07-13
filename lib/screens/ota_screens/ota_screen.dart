@@ -7,8 +7,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/ota_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
@@ -27,6 +27,15 @@ class OtaScreen extends ConsumerWidget {
     final BluetoothDevice? device = bleState.connectedDevice;
 
     final bool isConnected = device != null && device.isConnected;
+
+    // Navigate to scan screen when upload finishes (success or error)
+    ref.listen(otaProvider, (prev, next) {
+      if (prev?.status != next.status &&
+          (next.status == OtaStatus.success ||
+              next.status == OtaStatus.error)) {
+        context.go(AppRoutes.home);
+      }
+    });
 
     return Scaffold(
       appBar: const CustomAppBar(title: "Firmware Update"),
@@ -65,7 +74,6 @@ class OtaScreen extends ConsumerWidget {
                   if (device != null) {
                     ref.read(otaProvider.notifier).startOta(device);
                   }
-                  context.go(AppRoutes.home); // stay on the same screen
                 },
                 onReset: () => otaNotifier.reset(),
               ),
@@ -389,7 +397,7 @@ class _WarningText extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Text(
-      "⚠ Keep the app and device close during update.\nDo not close the app or turn off the device.",
+      "⚠ Keep the app and device near during update.\nDo not close the app or turn off the device.",
       textAlign: TextAlign.center,
       style: TextStyle(
         color: isDark ? Colors.orange : Colors.orange.shade700,

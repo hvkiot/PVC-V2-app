@@ -59,12 +59,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
       // Navigate back after a short delay
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
-          // Clear the navigation stack and go to scan screen
-          context.go('/scan'); // If using go_router
-          // OR
-          // Navigator.of(context).popUntil((route) => route.isFirst);
-          // OR
-          Navigator.of(context).pushReplacementNamed('/scan');
+          context.go('/');
         }
       });
     }
@@ -304,7 +299,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
                           ),
                           const SizedBox(height: 20),
                           Text(
-                            "Supply Voltage: 24V",
+                            "Supply Voltage: ${machineData.voltage.replaceAll('.0', '')}V",
                             style: theme.textTheme.bodyMedium?.copyWith(
                               fontSize: 24,
                             ),

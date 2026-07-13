@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,11 +28,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentIndex = 0;
   late final BluetoothDevice device;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  StreamSubscription<BluetoothConnectionState>? _connSub;
 
   @override
   void initState() {
     super.initState();
     device = widget.device;
+    _connSub = widget.device.connectionState.listen((state) {
+      if (!mounted) return;
+      if (state == BluetoothConnectionState.disconnected) {
+        // Show alert snackbar
+        ref
+            .read(globalMessageProvider.notifier)
+            .showError("ESP32 disconnected! Returning to scan...");
+
+        // Navigate to scan screen after short delay
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          context.go(AppRoutes.home); // your scan screen route
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connSub?.cancel();
+    super.dispose();
   }
 
   late final List<Widget> _children = [

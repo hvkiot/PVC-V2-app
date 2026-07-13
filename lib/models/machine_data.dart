@@ -52,6 +52,9 @@ class MachineData {
   @JsonKey(name: 'FIRMWARE_VERSION')
   final String firmwareVersion;
 
+  @JsonKey(name: 'ADAPTER_VOLTAGE')
+  final String voltage;
+
   MachineData({
     this.func = '0',
     this.inputA = 0.0,
@@ -67,6 +70,7 @@ class MachineData {
     this.coilBCurrent = 0.0,
     this.coilCurrent = 0.0,
     this.firmwareVersion = '0.0.0',
+    this.voltage = '24V',
   });
 
   // Connect to the generated factory

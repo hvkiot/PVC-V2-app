@@ -43,3 +43,4 @@ migration:
   unmanaged_files:
     - 'lib/main.dart'
     - 'ios/Runner.xcodeproj/project.pbxproj'
+  opencode -s ses_0dd3b93ffffeIQFo1U2bRqJJoc
