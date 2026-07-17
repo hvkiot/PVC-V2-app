@@ -1,7 +1,7 @@
 // lib/providers/ota_provider.dart
 // ============================================================
 // OTA Provider — Riverpod StateNotifier
-// Handles firmware upload to ESP32 via BLE OTA service
+// Handles firmware upload to the Kit via BLE OTA service
 // Uses flutter_blue_plus ^2.1.0
 // ============================================================
 import 'dart:io';
@@ -12,7 +12,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 
-// ---- OTA BLE UUIDs (must match ESP32 ble_server.cpp) ----
+// ---- OTA BLE UUIDs (must match device firmware) ----
 const String _otaServiceUuid = "12345678-1234-1234-1234-1234567890ab";
 const String _otaControlUuid = "12345678-1234-1234-1234-1234567890ac";
 const String _otaDataUuid = "12345678-1234-1234-1234-1234567890ad";
@@ -202,7 +202,7 @@ class OtaNotifier extends StateNotifier<OtaState> {
 
       await chars.control.write(startCmd.codeUnits, withoutResponse: false);
 
-      // Give ESP32 time to initialize flash writer
+      // Give device time to initialize flash writer
       await Future.delayed(const Duration(milliseconds: 500));
 
       state = state.copyWith(

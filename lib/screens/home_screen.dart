@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,33 +26,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentIndex = 0;
   late final BluetoothDevice device;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  StreamSubscription<BluetoothConnectionState>? _connSub;
 
   @override
   void initState() {
     super.initState();
     device = widget.device;
-    _connSub = widget.device.connectionState.listen((state) {
-      if (!mounted) return;
-      if (state == BluetoothConnectionState.disconnected) {
-        // Show alert snackbar
-        ref
-            .read(globalMessageProvider.notifier)
-            .showError("ESP32 disconnected! Returning to scan...");
-
-        // Navigate to scan screen after short delay
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted) return;
-          context.go(AppRoutes.home); // your scan screen route
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _connSub?.cancel();
-    super.dispose();
   }
 
   late final List<Widget> _children = [
@@ -149,48 +125,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? false
         : true;
 
-    return Scaffold(
-      key: _scaffoldKey,
-      endDrawer: const CustomDrawer(),
-      appBar: CustomAppBar(
-        showLogo: true,
-        title: pamIsConnected ? title() : "PAM NOT CONNECTED",
-        preferredSizeChild: PreferredSize(
-          preferredSize: const Size.fromHeight(kToolbarHeight),
-          child: isProcessing
-              ? LinearProgressIndicator(
-                  color: theme.colorScheme.primary,
-                  backgroundColor: theme.colorScheme.onSurface.withValues(
-                    alpha: 0.38,
-                  ),
-                )
-              : Container(),
-        ),
-        actions: [
-          pamIsConnected
-              ? IconButton(
-                  icon: const Icon(Icons.menu, size: 36),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final router = GoRouter.of(context);
+        await ref.read(bleProvider.notifier).disconnectFromDevice();
+        if (mounted) router.go(AppRoutes.home);
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        endDrawer: const CustomDrawer(),
+        appBar: CustomAppBar(
+          showLogo: true,
+          title: pamIsConnected ? title() : "PAM NOT CONNECTED",
+          preferredSizeChild: PreferredSize(
+            preferredSize: const Size.fromHeight(kToolbarHeight),
+            child: isProcessing
+                ? LinearProgressIndicator(
+                    color: theme.colorScheme.primary,
+                    backgroundColor: theme.colorScheme.onSurface.withValues(
+                      alpha: 0.38,
+                    ),
+                  )
+                : Container(),
+          ),
+          actions: [
+            pamIsConnected
+                ? IconButton(
+                    icon: const Icon(Icons.menu, size: 36),
 
-                  onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                )
-              : SizedBox.shrink(),
-        ],
+                    onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+                  )
+                : SizedBox.shrink(),
+          ],
+        ),
+        body: pamIsConnected ? _children[_currentIndex] : _buildNoPamScreen(),
+        bottomNavigationBar: pamIsConnected
+            ? BottomNavigationBar(
+                items: _bottomNavigationBarItems,
+                currentIndex: _currentIndex,
+                onTap: _onItemTapped,
+                selectedItemColor: isConnected
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface.withValues(alpha: 0.38),
+                unselectedItemColor: theme.colorScheme.onSurface.withValues(
+                  alpha: 0.38,
+                ),
+                enableFeedback: isConnected,
+              )
+            : null,
       ),
-      body: pamIsConnected ? _children[_currentIndex] : _buildNoPamScreen(),
-      bottomNavigationBar: pamIsConnected
-          ? BottomNavigationBar(
-              items: _bottomNavigationBarItems,
-              currentIndex: _currentIndex,
-              onTap: _onItemTapped,
-              selectedItemColor: isConnected
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurface.withValues(alpha: 0.38),
-              unselectedItemColor: theme.colorScheme.onSurface.withValues(
-                alpha: 0.38,
-              ),
-              enableFeedback: isConnected,
-            )
-          : null,
     );
   }
 
@@ -244,7 +229,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
             // Description
             Text(
-              "The PAM module is not detected. Please check the USB connection between ESP32 and PAM device.",
+              "The PAM module is not detected. Please check the connection between the Kit and PAM module.",
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
