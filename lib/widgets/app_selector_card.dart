@@ -53,15 +53,17 @@ class AppSelectorCard extends StatelessWidget {
 
             // 2. Title Section
             Expanded(
-              child: Text(
-                title.toUpperCase(),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                  fontSize: 22,
-                  color: enabled
-                      ? theme.colorScheme.onSurface
-                      : theme.disabledColor,
+              child: Semantics(
+                label: title.toUpperCase(),
+                child: Text(
+                  title.toUpperCase(),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.1,
+                    color: enabled
+                        ? theme.colorScheme.onSurface
+                        : theme.disabledColor,
+                  ),
                 ),
               ),
             ),
@@ -81,33 +83,35 @@ class AppSelectorCard extends StatelessWidget {
                 ),
                 child: IgnorePointer(
                   ignoring: !enabled,
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: options.contains(currentValue)
-                          ? currentValue
-                          : options.first,
-                      icon: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 22,
-                        color: enabled
-                            ? theme.colorScheme.primary
-                            : theme.disabledColor,
+                  child: Semantics(
+                    label: '${title.toUpperCase()} selector',
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: options.contains(currentValue)
+                            ? currentValue
+                            : options.first,
+                        icon: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 22,
+                          color: enabled
+                              ? theme.colorScheme.primary
+                              : theme.disabledColor,
+                        ),
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: enabled
+                              ? theme.colorScheme.primary
+                              : theme.disabledColor,
+                          fontWeight: FontWeight.w900,
+                        ),
+                        items: options.map((String val) {
+                          return DropdownMenuItem<String>(
+                            value: val,
+                            child: Text(val),
+                          );
+                        }).toList(),
+                        onChanged: onChanged,
+                        dropdownColor: theme.cardTheme.color,
                       ),
-                      style: TextStyle(
-                        color: enabled
-                            ? theme.colorScheme.primary
-                            : theme.disabledColor,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 22,
-                      ),
-                      items: options.map((String val) {
-                        return DropdownMenuItem<String>(
-                          value: val,
-                          child: Text(val),
-                        );
-                      }).toList(),
-                      onChanged: onChanged,
-                      dropdownColor: theme.cardTheme.color,
                     ),
                   ),
                 ),

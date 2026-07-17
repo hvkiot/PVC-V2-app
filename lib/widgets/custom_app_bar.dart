@@ -29,16 +29,20 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
       automaticallyImplyLeading: false,
 
       // Custom Back Button (10% Accent if needed, or standard theme color)
-      leading: Padding(
-        padding: const EdgeInsets.only(left: 16.0, top: 10),
-        child: CircleAvatar(
-          radius: 40,
-          backgroundColor: showLogo ? Colors.white : Colors.transparent,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 3.0),
-            child: Image.asset(
-              showLogo ? 'assets/HVK.png' : 'assets/APP_LOGO.png',
-              fit: BoxFit.contain,
+      leading: Semantics(
+        label: showLogo ? 'HVK Logo' : 'App Logo',
+        image: true,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 10),
+          child: CircleAvatar(
+            radius: 40,
+            backgroundColor: showLogo ? Colors.white : Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 3.0),
+              child: Image.asset(
+                showLogo ? 'assets/HVK.png' : 'assets/APP_LOGO.png',
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ),

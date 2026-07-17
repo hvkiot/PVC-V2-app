@@ -24,10 +24,13 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     with WidgetsBindingObserver {
   final List<BluetoothDevice> validDevices = [];
   bool isScanning = false;
-  BluetoothDevice? selectedDevice; // Track selection
+  BluetoothDevice? selectedDevice;
+  bool _justConnected =
+      false; // Prevents disconnect guard from killing fresh connection
 
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
   late StreamSubscription<BluetoothAdapterState> _adapterStateSubscription;
+  StreamSubscription<List<ScanResult>>? _scanSub;
   bool _isLocationServiceEnabled = true;
 
   @override
@@ -53,6 +56,19 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     });
   }
 
+  /// Disconnect any lingering BLE connection when scan screen becomes the active route.
+  /// Skips if a connection was just initiated by the user from this screen.
+  void _ensureDisconnectedOnRouteActive() {
+    if (_justConnected) return;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) return;
+    final bleState = ref.read(bleProvider);
+    if (bleState.connectedDevice == null || bleState.isConnecting) return;
+    Future.microtask(() {
+      if (mounted) ref.read(bleProvider.notifier).disconnectFromDevice();
+    });
+  }
+
   /// Clear stale devices when the previously connected device disconnects
   void _onBleDisconnect(BluetoothDevice? prevDevice) {
     if (prevDevice != null && mounted) {
@@ -67,6 +83,7 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _adapterStateSubscription.cancel();
+    _scanSub?.cancel();
     FlutterBluePlus.stopScan();
     validDevices.clear();
     super.dispose();
@@ -129,28 +146,23 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
       ref
           .read(globalMessageProvider.notifier)
           .showError("Bluetooth permissions not granted");
-
       return;
     }
 
     try {
       final serviceUuid = ref.read(bleProvider.notifier).getServiceUuid;
 
-      // Start scanning
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+      // Cancel previous subscription to avoid duplicates
+      _scanSub?.cancel();
 
-      // Listen for scan results
-      FlutterBluePlus.scanResults.listen((results) {
+      // Subscribe to scan results BEFORE starting scan
+      // so devices appear immediately as they're discovered
+      _scanSub = FlutterBluePlus.scanResults.listen((results) {
         for (var result in results) {
-          // Check if device already in list
           if (validDevices.any((d) => d.remoteId == result.device.remoteId)) {
             continue;
           }
-
-          // Check advertised service UUIDs (no connection needed)
           final advertisedServices = result.advertisementData.serviceUuids;
-
-          // Check if the device advertises our service UUID
           if (advertisedServices.contains(serviceUuid)) {
             if (mounted) {
               setState(() {
@@ -161,8 +173,8 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
         }
       });
 
-      // Wait for scan to complete
-      await Future.delayed(const Duration(seconds: 10));
+      // Start scan — await blocks until the 10s timeout or stopScan
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
 
       if (mounted) {
         setState(() => isScanning = false);
@@ -170,7 +182,6 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     } catch (e) {
       if (mounted) {
         setState(() => isScanning = false);
-        // We handle the "off" state proactively now, so we can likely suppress generic errors or keep them as backup
         if (!e.toString().contains("turned on")) {
           ref.read(globalMessageProvider.notifier).showError(e.toString());
         }
@@ -179,22 +190,18 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   }
 
   Future<void> _handleConnect(BluetoothDevice device) async {
+    _justConnected = true;
     try {
-      // 2. Stop scanning before attempting to connect (best practice)
       await FlutterBluePlus.stopScan();
 
-      // 3. Use the Riverpod notifier to initiate connection
-      // This will update the state in your bleProvider
       final success = await ref
           .read(bleProvider.notifier)
           .connectToDevice(device);
 
       if (mounted) {
         if (success) {
-          // 4. Navigate to details only if connection succeeded
           context.push(AppRoutes.details, extra: device);
         } else {
-          // Connection failed, show error from the provider state
           final error = ref.read(bleProvider).errorMessage;
           ref
               .read(globalMessageProvider.notifier)
@@ -204,6 +211,8 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     } catch (e) {
       final error = e.toString();
       ref.read(globalMessageProvider.notifier).showError(error);
+    } finally {
+      _justConnected = false;
     }
   }
 
@@ -220,6 +229,9 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Disconnect any lingering BLE connection when arriving at scan screen
+    _ensureDisconnectedOnRouteActive();
+
     // Clear stale devices when the previously connected device disconnects
     ref.listen(bleProvider, (prev, next) {
       if (prev?.connectedDevice != null && next.connectedDevice == null) {
@@ -313,15 +325,23 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'SCANNING',
-                style: TextStyle(fontSize: 16, letterSpacing: 2.0),
+              Semantics(
+                label: isScanning ? 'Scanning for devices' : 'Device list',
+                child: Text(
+                  'SCANNING',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    letterSpacing: 2.0,
+                  ),
+                ),
               ),
               const SizedBox(height: 10),
               Expanded(
                 child: Card(
                   margin: const EdgeInsets.symmetric(vertical: 20),
-                  child: deviceList(),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: deviceList(),
+                  ),
                 ),
               ),
 
@@ -444,63 +464,112 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     );
   }
 
+  Widget _shimmerItem() {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor.withAlpha(50)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: theme.disabledColor.withAlpha(30),
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Container(
+              height: 16,
+              decoration: BoxDecoration(
+                color: theme.disabledColor.withAlpha(30),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget deviceList() {
+    final theme = Theme.of(context);
+    final showShimmer = isScanning && validDevices.isEmpty;
+    if (showShimmer) {
+      return ListView.builder(
+        key: const ValueKey('shimmer'),
+        itemCount: 5,
+        itemBuilder: (context, index) => _shimmerItem(),
+      );
+    }
     if (validDevices.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isScanning ? Icons.bluetooth_searching : Icons.bluetooth_disabled,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              isScanning ? 'Searching for devices...' : 'No devices found',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-
-            if (!isScanning) ...[
+        key: const ValueKey('empty'),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.bluetooth_disabled, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'No devices found',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
-                'Tap "refresh icon" to search',
-                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                'Tap refresh to search',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[500],
+                ),
               ),
             ],
-          ],
+          ),
         ),
       );
     }
     return ListView.builder(
+      key: const ValueKey('list'),
       itemCount: validDevices.length,
       itemBuilder: (context, index) {
         final device = validDevices[index];
-        // Check if this device is the one selected
         final isSelected = selectedDevice?.remoteId == device.remoteId;
 
-        return Container(
-          padding: const EdgeInsets.all(8),
-          child: ListTile(
-            selected: isSelected,
-            title: Text(
-              device.platformName.isEmpty
-                  ? 'Unknown Device'
-                  : device.platformName,
+        return Semantics(
+          label:
+              '${device.platformName.isEmpty ? 'Unknown' : device.platformName} device',
+          button: true,
+          selected: isSelected,
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            child: ListTile(
+              selected: isSelected,
+              title: Text(
+                device.platformName.isEmpty
+                    ? 'Unknown Device'
+                    : device.platformName,
+              ),
+              trailing: isSelected
+                  ? const Icon(Icons.check_circle)
+                  : const Icon(Icons.radio_button_unchecked, size: 16),
+              onTap: () {
+                setState(() {
+                  if (isSelected) {
+                    selectedDevice = null;
+                  } else {
+                    selectedDevice = device;
+                  }
+                });
+              },
             ),
-            trailing: isSelected
-                ? const Icon(Icons.check_circle)
-                : const Icon(Icons.radio_button_unchecked, size: 16),
-            onTap: () {
-              setState(() {
-                // Deselect if tapping the same device, otherwise select new
-                if (isSelected) {
-                  selectedDevice = null;
-                } else {
-                  selectedDevice = device;
-                }
-              });
-            },
           ),
         );
       },

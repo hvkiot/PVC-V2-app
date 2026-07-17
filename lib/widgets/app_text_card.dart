@@ -91,15 +91,17 @@ class _AppTextCardState extends State<AppTextCard> {
             const SizedBox(width: 16),
             Expanded(
               flex: 1,
-              child: Text(
-                widget.title.toUpperCase(),
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                  fontSize: 22,
-                  color: widget.enabled
-                      ? theme.colorScheme.onSurface
-                      : theme.disabledColor,
+              child: Semantics(
+                label: widget.title.toUpperCase(),
+                child: Text(
+                  widget.title.toUpperCase(),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.1,
+                    color: widget.enabled
+                        ? theme.colorScheme.onSurface
+                        : theme.disabledColor,
+                  ),
                 ),
               ),
             ),
@@ -129,8 +131,7 @@ class _AppTextCardState extends State<AppTextCard> {
                   ],
                   controller: _controller,
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontSize: 22,
+                  style: theme.textTheme.titleLarge?.copyWith(
                     color: widget.enabled
                         ? theme.colorScheme.onSurfaceVariant
                         : theme.disabledColor,
@@ -143,15 +144,17 @@ class _AppTextCardState extends State<AppTextCard> {
               ),
             ),
             const SizedBox(width: 16),
-            Text(
-              'mA',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 22,
-                color: widget.enabled
-                    ? theme.colorScheme.onSurfaceVariant
-                    : theme.disabledColor,
+              Semantics(
+                label: 'milliamps',
+                child: Text(
+                  'mA',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: widget.enabled
+                        ? theme.colorScheme.onSurfaceVariant
+                        : theme.disabledColor,
+                  ),
+                ),
               ),
-            ),
           ],
         ),
       ),

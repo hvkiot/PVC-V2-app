@@ -145,8 +145,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                 child: Text(
                   "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 18,
+                  style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.error,
                     fontStyle: FontStyle.italic,
                   ),
@@ -206,14 +205,6 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                   : null,
               child: Text(
                 _isSynchronizing ? 'Synchronizing...' : 'Save',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                  fontSize: 22,
-                  color: isDirty
-                      ? theme.colorScheme.onSurface
-                      : theme.disabledColor,
-                ),
               ),
             ),
             SizedBox(height: 32),

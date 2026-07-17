@@ -73,7 +73,6 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
     final isDark = theme.brightness == Brightness.dark;
     final isConnected = bleState.connectedDevice == device;
     final isDataAvailable = bleState.characteristicValue.isNotEmpty;
-    final isConnecting = bleState.isConnecting;
 
     String unit(String mode) {
       if (mode == 'C') {
@@ -133,76 +132,8 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
       body: SafeArea(
         child: !isConnected
             ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.error.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.bluetooth_disabled_rounded,
-                          size: 64,
-                          color: theme.colorScheme.error,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        "HARDWARE DISCONNECTED",
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "The connection to the PVC controller was lost. Please ensure the device is powered on and within range.",
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () => isConnecting
-                              ? null
-                              : bleNotifier.connectToDevice(device),
-                          icon: Icon(
-                            Icons.refresh_rounded,
-                            size: 20,
-                            color: isConnecting
-                                ? theme.colorScheme.onSurfaceVariant
-                                : theme.colorScheme.primary,
-                          ),
-                          label: Text(
-                            isConnecting
-                                ? "CONNECTING..."
-                                : "RECONNECT TO THE DEVICE",
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: isConnecting
-                                  ? theme.colorScheme.onSurfaceVariant
-                                  : theme.colorScheme.primary,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: isConnected
-                                ? BorderSide(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  )
-                                : BorderSide(color: theme.colorScheme.primary),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                child: CircularProgressIndicator(
+                  color: theme.colorScheme.primary,
                 ),
               )
             : SingleChildScrollView(

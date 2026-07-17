@@ -35,20 +35,24 @@ class CustomDrawer extends ConsumerWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  padding: EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Designed & Developed by',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center,
+              padding: EdgeInsets.all(8),
+              child: Semantics(
+                label: 'Designed and Developed by HVK',
+                image: true,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Designed & Developed by',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
                       ),
-                      Image.asset('assets/HVK.png'),
-                    ],
-                  ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Image.asset('assets/HVK.png'),
+                  ],
+                ),
+              ),
                 ),
                 SizedBox(width: 10),
                 Container(
@@ -58,20 +62,24 @@ class CustomDrawer extends ConsumerWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  padding: EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Powered by',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        textAlign: TextAlign.center
+              padding: EdgeInsets.all(8),
+              child: Semantics(
+                label: 'Powered by WEST',
+                image: true,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Powered by',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
                       ),
-                      Image.asset('assets/WEST.png'),
-                    ],
-                  ),
+                      textAlign: TextAlign.center
+                    ),
+                    Image.asset('assets/WEST.png'),
+                  ],
+                ),
+              ),
                 ),
                 SizedBox(width: 10),
               ],
@@ -83,23 +91,52 @@ class CustomDrawer extends ConsumerWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _DrawerItem(
-                  icon: Icons.system_update,
+                Semantics(
                   label: 'Firmware Update',
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.go(AppRoutes.ota);
-                  },
+                  button: true,
+                  child: _DrawerItem(
+                    icon: Icons.system_update,
+                    label: 'Firmware Update',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go(AppRoutes.ota);
+                    },
+                  ),
                 ),
                 Divider(color: colorScheme.onSurface.withAlpha(25)),
-                _DrawerItem(
-                  icon: Icons.bluetooth_disabled_outlined,
-                  label: 'DISCONNECT DEVICE',
-                  isDestructive: true,
-                  onTap: () {
-                    ref.read(bleProvider.notifier).disconnectFromDevice();
-                    Navigator.pop(context);
-                  },
+                Semantics(
+                  label: 'Disconnect Device',
+                  button: true,
+                  child: _DrawerItem(
+                    icon: Icons.bluetooth_disabled_outlined,
+                    label: 'DISCONNECT DEVICE',
+                    isDestructive: true,
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Disconnect Device'),
+                          content: const Text(
+                            'Are you sure you want to disconnect from the current device?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('CANCEL'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('DISCONNECT'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        ref.read(bleProvider.notifier).disconnectFromDevice();
+                        if (context.mounted) Navigator.pop(context);
+                      }
+                    },
+                  ),
                 ),
               ],
             ),

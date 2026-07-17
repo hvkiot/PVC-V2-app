@@ -161,8 +161,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                   children: [
                     Text(
                       'CURRENT MODE: $mode',
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontSize: 24,
+                      style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.1,
                       ),
@@ -171,8 +170,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                       const SizedBox(width: 10),
                       Text(
                         '(LOCKED)',
-                        style: TextStyle(
-                          fontSize: 24,
+                        style: theme.textTheme.headlineSmall?.copyWith(
                           color: theme.colorScheme.error,
                           fontWeight: FontWeight.bold,
                         ),
@@ -188,8 +186,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                 child: Text(
                   "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 18,
+                  style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.error,
                     fontStyle: FontStyle.italic,
                   ),
@@ -243,14 +240,6 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                   : null,
               child: Text(
                 _isSynchronizing ? 'Synchronizing...' : 'Save Config',
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                  fontSize: 22,
-                  color: isDirty
-                      ? theme.colorScheme.onSurface
-                      : theme.disabledColor,
-                ),
               ),
             ),
             const SizedBox(height: 32),

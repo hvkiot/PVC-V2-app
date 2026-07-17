@@ -33,11 +33,19 @@ class OtaScreen extends ConsumerWidget {
       if (prev?.status != next.status &&
           (next.status == OtaStatus.success ||
               next.status == OtaStatus.error)) {
+        ref.read(bleProvider.notifier).disconnectFromDevice();
         context.go(AppRoutes.home);
       }
     });
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        ref.read(bleProvider.notifier).disconnectFromDevice();
+        if (context.mounted) context.go(AppRoutes.home);
+      },
+      child: Scaffold(
       appBar: const CustomAppBar(title: "Firmware Update", showLogo: true),
       body: SafeArea(
         child: Padding(
@@ -86,6 +94,7 @@ class OtaScreen extends ConsumerWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }
