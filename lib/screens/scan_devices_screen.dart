@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
+import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
 
 class AvailableDevicesScreen extends ConsumerStatefulWidget {
@@ -240,7 +241,7 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     final colorScheme = theme.colorScheme;
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'HVK',
+        title: 'PROPORTIONAL VALVE CHECKER',
         preferredSizeChild: isScanning
             ? const LinearProgressIndicator()
             : const SizedBox(height: 1.0),
@@ -262,24 +263,61 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const SizedBox(height: 40),
+              const SizedBox(height: 20),
               // Match Sketch Title
-              const Text(
-                'PROPORTIONAL VALVE CHECKER',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.lightBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.brandBlue, width: 0.2),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Column(
+                      children: [
+                        Text(
+                          'Designed & Developed by',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.black54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Image.asset('assets/HVK.png', width: 100, height: 50),
+                      ],
+                    ),
+                    SizedBox(
+                      height: 60,
+                      child: VerticalDivider(
+                        color: Colors.red,
+                        thickness: 1.5,
+                        width: 15,
+                      ),
+                    ),
+                    Column(
+                      children: [
+                        Text(
+                          'Powered by',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.black54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Image.asset('assets/WEST.png', width: 100, height: 50),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
               const Text(
                 'SCANNING',
                 style: TextStyle(fontSize: 16, letterSpacing: 2.0),
               ),
               const SizedBox(height: 10),
-
               Expanded(
                 child: Card(
                   margin: const EdgeInsets.symmetric(vertical: 20),

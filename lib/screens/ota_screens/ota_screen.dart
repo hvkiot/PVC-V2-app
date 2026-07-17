@@ -38,7 +38,7 @@ class OtaScreen extends ConsumerWidget {
     });
 
     return Scaffold(
-      appBar: const CustomAppBar(title: "Firmware Update"),
+      appBar: const CustomAppBar(title: "Firmware Update", showLogo: true),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),

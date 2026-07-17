@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
-  final bool showBackArrow;
+  final bool showLogo;
   final List<Widget>? actions;
   final Widget? preferredSizeChild;
 
   const CustomAppBar({
     super.key,
     required this.title,
-    this.showBackArrow = false,
+    this.showLogo = false,
     this.actions,
     this.preferredSizeChild,
   });
@@ -33,10 +33,13 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         padding: const EdgeInsets.only(left: 16.0, top: 10),
         child: CircleAvatar(
           radius: 40,
-          backgroundColor: Colors.white,
+          backgroundColor: showLogo ? Colors.white : Colors.transparent,
           child: Padding(
             padding: const EdgeInsets.only(left: 3.0),
-            child: Image.asset('assets/HVK.png', fit: BoxFit.contain),
+            child: Image.asset(
+              showLogo ? 'assets/HVK.png' : 'assets/APP_LOGO.png',
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       ),

@@ -36,7 +36,19 @@ class CustomDrawer extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   padding: EdgeInsets.all(8),
-                  child: Image.asset('assets/HVK.png'),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Designed & Developed by',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      Image.asset('assets/HVK.png'),
+                    ],
+                  ),
                 ),
                 SizedBox(width: 10),
                 Container(
@@ -47,7 +59,19 @@ class CustomDrawer extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   padding: EdgeInsets.all(8),
-                  child: Image.asset('assets/WEST.png'),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Powered by',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center
+                      ),
+                      Image.asset('assets/WEST.png'),
+                    ],
+                  ),
                 ),
                 SizedBox(width: 10),
               ],
@@ -59,21 +83,6 @@ class CustomDrawer extends ConsumerWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                // _DrawerItem(
-                //   icon: Icons.save_outlined,
-                //   label: 'SAVE CONFIG',
-                //   onTap: () => Navigator.pop(context),
-                // ),
-                // _DrawerItem(
-                //   icon: Icons.history_outlined,
-                //   label: 'LOAD CONFIG',
-                //   onTap: () => Navigator.pop(context),
-                // ),
-                // _DrawerItem(
-                //   icon: Icons.drive_file_rename_outline_outlined,
-                //   label: 'RENAME CONFIG',
-                //   onTap: () => Navigator.pop(context),
-                // ),
                 _DrawerItem(
                   icon: Icons.system_update,
                   label: 'Firmware Update',

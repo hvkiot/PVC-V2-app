@@ -153,6 +153,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       key: _scaffoldKey,
       endDrawer: const CustomDrawer(),
       appBar: CustomAppBar(
+        showLogo: true,
         title: pamIsConnected ? title() : "PAM NOT CONNECTED",
         preferredSizeChild: PreferredSize(
           preferredSize: const Size.fromHeight(kToolbarHeight),
