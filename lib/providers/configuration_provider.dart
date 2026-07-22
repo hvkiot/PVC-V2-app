@@ -109,7 +109,6 @@ class InputsTabState {
   }
 }
 
-// StateNotifier for Inputs Tab
 class InputsTabNotifier extends StateNotifier<InputsTabState> {
   InputsTabNotifier() : super(const InputsTabState());
 

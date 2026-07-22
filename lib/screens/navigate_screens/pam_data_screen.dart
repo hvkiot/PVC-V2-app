@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
+import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/utils/unit_converter.dart';
 
 class PamDataScreen extends ConsumerStatefulWidget {
@@ -52,7 +53,7 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
     if (mounted) {
       ref
           .read(globalMessageProvider.notifier)
-          .showError('Device disconnected. Returning to scan screen...');
+          .showError('Device disconnected');
 
       // Navigate back after a short delay
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -130,127 +131,129 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: !isConnected
-            ? Center(
-                child: CircularProgressIndicator(
-                  color: theme.colorScheme.primary,
-                ),
-              )
-            : SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 10),
+        child: ResponsiveWrapper(
+          child: !isConnected
+              ? Center(
+                  child: CircularProgressIndicator(
+                    color: theme.colorScheme.primary,
+                  ),
+                )
+              : SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 10),
 
-                    // Device ID Row
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Device ID: ${device.platformName.replaceAll('PVC-', '')}',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          if (isConnected)
-                            IconButton(
-                              icon: isDataAvailable
-                                  ? Icon(Icons.bluetooth_connected)
-                                  : Icon(Icons.bluetooth),
-                              color: isDataAvailable
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.onSurfaceVariant,
-                              onPressed: () {
-                                bleNotifier.connectToDevice(device);
-                              },
+                      // Device ID Row
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Device ID: ${device.platformName.replaceAll('PVC-', '')}',
+                              style: theme.textTheme.titleLarge,
                             ),
-                        ],
+                            if (isConnected)
+                              IconButton(
+                                icon: isDataAvailable
+                                    ? Icon(Icons.bluetooth_connected)
+                                    : Icon(Icons.bluetooth),
+                                color: isDataAvailable
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                                onPressed: () {
+                                  bleNotifier.connectToDevice(device);
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 8),
 
-                    // Grid for sensor data
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            childAspectRatio: 1.6,
-                          ),
-                      padding: const EdgeInsets.all(16),
-                      itemCount: sensorData.length + 2,
-                      itemBuilder: (context, index) {
-                        if (index == 4) {
-                          return _buildLEDCard(
-                            'MODE 195',
-                            machineData.func == '195',
-                            context,
-                            isDark,
-                          );
-                        }
-                        if (index == 5) {
-                          return _buildLEDCard(
-                            'MODE 196',
-                            machineData.func == '196',
-                            context,
-                            isDark,
-                          );
-                        }
-                        return _buildCard(sensorData[index], context);
-                      },
-                    ),
-
-                    // Bottom section
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildReadyCard(
-                            "READY ${machineData.ready}",
-                            machineData.enableB
-                                ? led(
-                                    machineData.ready,
-                                    machineData.pin15,
-                                    machineData.pin6,
-                                  )
-                                : ledStandard(machineData.ready),
-                            context,
-                            isDark,
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            "Supply Voltage: ${machineData.voltage.replaceAll('.0', '')}V",
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontSize: 24,
+                      // Grid for sensor data
+                      GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              childAspectRatio: 1.6,
                             ),
-                          ),
-                          const SizedBox(height: 20),
-                          _buildTextRow(
-                            "ENABLE (A): PIN 15",
-                            machineData.pin15,
-                            isDark,
-                          ),
-                          const SizedBox(height: 20),
-                          _buildTextRow(
-                            "ENABLE (B): PIN 6",
-                            machineData.pin6,
-                            isDark,
-                          ),
-                        ],
+                        padding: const EdgeInsets.all(16),
+                        itemCount: sensorData.length + 2,
+                        itemBuilder: (context, index) {
+                          if (index == 4) {
+                            return _buildLEDCard(
+                              'MODE 195',
+                              machineData.func == '195',
+                              context,
+                              isDark,
+                            );
+                          }
+                          if (index == 5) {
+                            return _buildLEDCard(
+                              'MODE 196',
+                              machineData.func == '196',
+                              context,
+                              isDark,
+                            );
+                          }
+                          return _buildCard(sensorData[index], context);
+                        },
                       ),
-                    ),
-                  ],
+
+                      // Bottom section
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildReadyCard(
+                              "READY ${machineData.ready}",
+                              machineData.enableB
+                                  ? led(
+                                      machineData.ready,
+                                      machineData.pin15,
+                                      machineData.pin6,
+                                    )
+                                  : ledStandard(machineData.ready),
+                              context,
+                              isDark,
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              "Supply Voltage: ${machineData.voltage.replaceAll('.0', '')}V",
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontSize: 24,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            _buildTextRow(
+                              "ENABLE (A): PIN 15",
+                              machineData.pin15,
+                              isDark,
+                            ),
+                            const SizedBox(height: 20),
+                            _buildTextRow(
+                              "ENABLE (B): PIN 6",
+                              machineData.pin6,
+                              isDark,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/foundation.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
 
@@ -103,6 +104,21 @@ class CustomDrawer extends ConsumerWidget {
                     },
                   ),
                 ),
+                if (kDebugMode) ...[
+                  Divider(color: colorScheme.onSurface.withAlpha(25)),
+                  Semantics(
+                    label: 'Serial Monitor',
+                    button: true,
+                    child: _DrawerItem(
+                      icon: Icons.terminal,
+                      label: 'Serial Monitor',
+                      onTap: () {
+                        Navigator.pop(context);
+                        context.go(AppRoutes.serialMonitor);
+                      },
+                    ),
+                  ),
+                ],
                 Divider(color: colorScheme.onSurface.withAlpha(25)),
                 Semantics(
                   label: 'Disconnect Device',

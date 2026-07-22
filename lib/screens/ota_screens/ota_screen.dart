@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/ota_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
+import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 
@@ -33,6 +34,7 @@ class OtaScreen extends ConsumerWidget {
       if (prev?.status != next.status &&
           (next.status == OtaStatus.success ||
               next.status == OtaStatus.error)) {
+        otaNotifier.reset();
         ref.read(bleProvider.notifier).disconnectFromDevice();
         context.go(AppRoutes.home);
       }
@@ -42,59 +44,68 @@ class OtaScreen extends ConsumerWidget {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        ref.read(bleProvider.notifier).disconnectFromDevice();
-        if (context.mounted) context.go(AppRoutes.home);
+        otaNotifier.reset();
+        final device = bleState.connectedDevice;
+        if (device != null && context.mounted) {
+          context.go(AppRoutes.details, extra: device);
+        } else if (context.mounted) {
+          context.go(AppRoutes.home);
+        }
       },
       child: Scaffold(
-      appBar: const CustomAppBar(title: "Firmware Update", showLogo: true),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ---- Connection Status Banner ----
-              _ConnectionBanner(isConnected: isConnected),
-              const SizedBox(height: 24),
+        appBar: const CustomAppBar(title: "Firmware Update", showLogo: true),
+        body: SafeArea(
+          child: ResponsiveWrapper(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ---- Connection Status Banner ----
+                  _ConnectionBanner(isConnected: isConnected),
+                  const SizedBox(height: 24),
 
-              // ---- Firmware Info Card ----
-              _FirmwareInfoCard(otaState: otaState),
-              const SizedBox(height: 24),
+                  // ---- Firmware Info Card ----
+                  _FirmwareInfoCard(otaState: otaState),
+                  const SizedBox(height: 24),
 
-              // ---- Progress Section ----
-              if (otaState.isRunning || otaState.status == OtaStatus.success)
-                _ProgressSection(otaState: otaState),
+                  // ---- Progress Section ----
+                  if (otaState.isRunning ||
+                      otaState.status == OtaStatus.success)
+                    _ProgressSection(otaState: otaState),
 
-              if (otaState.isRunning || otaState.status == OtaStatus.success)
-                const SizedBox(height: 24),
+                  if (otaState.isRunning ||
+                      otaState.status == OtaStatus.success)
+                    const SizedBox(height: 24),
 
-              // ---- Status Message ----
-              _StatusMessage(otaState: otaState),
-              const SizedBox(height: 32),
+                  // ---- Status Message ----
+                  _StatusMessage(otaState: otaState),
+                  const SizedBox(height: 32),
 
-              const Spacer(),
+                  const Spacer(),
 
-              // ---- Action Button ----
-              _ActionButton(
-                otaState: otaState,
-                isConnected: isConnected,
-                onUpload: () {
-                  if (device != null) {
-                    ref.read(otaProvider.notifier).startOta(device);
-                  }
-                },
-                onReset: () => otaNotifier.reset(),
+                  // ---- Action Button ----
+                  _ActionButton(
+                    otaState: otaState,
+                    isConnected: isConnected,
+                    onUpload: () {
+                      if (device != null) {
+                        ref.read(otaProvider.notifier).startOta(device);
+                      }
+                    },
+                    onReset: () => otaNotifier.reset(),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ---- Warning text ----
+                  const _WarningText(),
+                ],
               ),
-
-              const SizedBox(height: 16),
-
-              // ---- Warning text ----
-              const _WarningText(),
-            ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 }

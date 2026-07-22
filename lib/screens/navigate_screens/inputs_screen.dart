@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/app_selector_card.dart';
 
 class InputScreen extends ConsumerStatefulWidget {
@@ -14,89 +16,17 @@ class InputScreen extends ConsumerStatefulWidget {
 }
 
 class _InputScreenState extends ConsumerState<InputScreen> {
+  final Logger _logger = Logger(
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 5,
+      lineLength: 80,
+      colors: true,
+      printEmojis: true,
+    ),
+  );
+
   bool _isSynchronizing = false;
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  void save() async {
-    final machineData = ref.read(machineDataProvider);
-    final inputsState = ref.read(inputsTabProvider);
-    final bleNotifier = ref.read(bleProvider.notifier);
-    final overlayNotifier = ref.read(processingOverlayProvider.notifier);
-    final messageNotifier = ref.read(globalMessageProvider.notifier);
-
-    // Resolve display values (same logic as build)
-    final selectedMode = inputsState.selectedMode ?? machineData.func;
-    final input1 =
-        inputsState.selectedInput1 ??
-        (machineData.mode == 'V' ? 'Voltage' : 'Current');
-    final input2 =
-        inputsState.selectedInput2 ??
-        (machineData.mode == 'V' ? 'Voltage' : 'Current');
-
-    // 1. Safety Validation: Pin 15 must be OFF
-    if (machineData.pin15) {
-      messageNotifier.showError(
-        "PIN 15 Logic Conflict — Disable Pin 15 to modify settings",
-      );
-      return;
-    }
-
-    overlayNotifier.state = true;
-    setState(() => _isSynchronizing = true);
-
-    // 2. Identify changed data
-    List<String> commandsToSend = [];
-
-    bool modeChanged = selectedMode != machineData.func;
-    if (modeChanged) {
-      commandsToSend.add(selectedMode);
-    }
-
-    String requestedInputHW = input1.toUpperCase();
-    String currentInputHW = machineData.mode == 'V' ? 'VOLTAGE' : 'CURRENT';
-    if (modeChanged || requestedInputHW != currentInputHW) {
-      commandsToSend.add(requestedInputHW);
-    }
-
-    if (selectedMode == '196') {
-      String requestedInput2HW = input2.toUpperCase();
-      if (requestedInput2HW != requestedInputHW) {
-        commandsToSend.add(requestedInput2HW);
-      }
-    }
-
-    if (commandsToSend.isEmpty) {
-      overlayNotifier.state = false;
-      messageNotifier.showSuccess("No changes detected.");
-      return;
-    }
-
-    // 3. Sequential send with hardware delays (1500ms for input mode changes)
-    bool allSuccess = true;
-    for (String command in commandsToSend) {
-      bool success = await bleNotifier.writeToCharacteristic(command);
-      if (!success) {
-        allSuccess = false;
-        break;
-      }
-      await Future.delayed(const Duration(seconds: 4));
-    }
-
-    overlayNotifier.state = false;
-    setState(() => _isSynchronizing = false);
-
-    if (allSuccess) {
-      // State Restoration: clear local overrides, force re-read from hardware
-      ref.read(inputsTabProvider.notifier).reset();
-      messageNotifier.showSuccess("Input configuration written successfully");
-    } else {
-      messageNotifier.showError("Write failed — transaction aborted");
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,8 +36,8 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     final theme = Theme.of(context);
 
     final bool isPin15Active = machineData.pin15;
+    final bool isBusy = ref.watch(bleProvider).isBusy;
 
-    // Resolve display values: User Selection OR Hardware Value
     final displayMode = inputsState.selectedMode ?? machineData.func;
     final displayInput1 =
         inputsState.selectedInput1 ??
@@ -116,7 +46,6 @@ class _InputScreenState extends ConsumerState<InputScreen> {
         inputsState.selectedInput2 ??
         (machineData.mode == 'V' ? 'Voltage' : 'Current');
 
-    // Dirty Check: enable Save only when local selections differ from hardware
     bool isDirty = false;
     if (inputsState.selectedMode != null &&
         inputsState.selectedMode != machineData.func) {
@@ -133,84 +62,199 @@ class _InputScreenState extends ConsumerState<InputScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [
-            if (isPin15Active)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
-                child: Text(
-                  "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.error,
-                    fontStyle: FontStyle.italic,
+      body: ResponsiveWrapper(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                if (isPin15Active)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 12.0),
+                      child: Text(
+                        "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
                   ),
+                AppSelectorCard(
+                  title: 'Mode',
+                  currentValue: displayMode,
+                  options: ['195', '196'],
+                  onChanged: (value) => inputsNotifier.setMode(value!),
+                  icon: Icons.mode,
+                  enabled: !isPin15Active && !isBusy,
                 ),
-              ),
-            AppSelectorCard(
-              title: 'Mode',
-              currentValue: displayMode,
-              options: ['195', '196'],
-              onChanged: (value) => inputsNotifier.setMode(value!),
-              icon: Icons.mode,
-              enabled: !isPin15Active,
+                Divider(
+                  color: theme.colorScheme.onSurface.withAlpha(25),
+                  thickness: 1,
+                ),
+                if (displayMode == '195') ...[
+                  AppSelectorCard(
+                    title: 'Input',
+                    currentValue: displayInput1,
+                    options: ['Voltage', 'Current'],
+                    onChanged: (value) => inputsNotifier.setInput1(value!),
+                    icon: Icons.input,
+                    enabled: !isPin15Active && !isBusy,
+                  ),
+                  Divider(
+                    color: theme.colorScheme.onSurface.withAlpha(25),
+                    thickness: 1,
+                  ),
+                ] else ...[
+                  AppSelectorCard(
+                    title: 'Input 1',
+                    currentValue: displayInput1,
+                    options: ['Voltage', 'Current'],
+                    onChanged: (value) => inputsNotifier.setInput1(value!),
+                    icon: Icons.input,
+                    enabled: !isPin15Active && !isBusy,
+                  ),
+                  Divider(
+                    color: theme.colorScheme.onSurface.withAlpha(25),
+                    thickness: 1,
+                  ),
+                  AppSelectorCard(
+                    title: 'Input 2',
+                    currentValue: displayInput2,
+                    options: ['Voltage', 'Current'],
+                    onChanged: (value) => inputsNotifier.setInput2(value!),
+                    icon: Icons.input,
+                    enabled: !isPin15Active && !isBusy,
+                  ),
+                ],
+                SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed:
+                      (isDirty &&
+                          !isPin15Active &&
+                          !isBusy &&
+                          !_isSynchronizing)
+                      ? () {
+                          save();
+                        }
+                      : null,
+                  child: Text(_isSynchronizing ? 'Synchronizing...' : 'Save'),
+                ),
+                SizedBox(height: 32),
+              ],
             ),
-            Divider(
-              color: theme.colorScheme.onSurface.withAlpha(25),
-              thickness: 1,
-            ),
-            if (displayMode == '195') ...[
-              AppSelectorCard(
-                title: 'Input',
-                currentValue: displayInput1,
-                options: ['Voltage', 'Current'],
-                onChanged: (value) => inputsNotifier.setInput1(value!),
-                icon: Icons.input,
-                enabled: !isPin15Active,
-              ),
-              Divider(
-                color: theme.colorScheme.onSurface.withAlpha(25),
-                thickness: 1,
-              ),
-            ] else ...[
-              AppSelectorCard(
-                title: 'Input 1',
-                currentValue: displayInput1,
-                options: ['Voltage', 'Current'],
-                onChanged: (value) => inputsNotifier.setInput1(value!),
-                icon: Icons.input,
-                enabled: !isPin15Active,
-              ),
-              Divider(
-                color: theme.colorScheme.onSurface.withAlpha(25),
-                thickness: 1,
-              ),
-              AppSelectorCard(
-                title: 'Input 2',
-                currentValue: displayInput2,
-                options: ['Voltage', 'Current'],
-                onChanged: (value) => inputsNotifier.setInput2(value!),
-                icon: Icons.input,
-                enabled: !isPin15Active,
-              ),
-            ],
-            Spacer(),
-            ElevatedButton(
-              onPressed: (isDirty && !isPin15Active && !_isSynchronizing)
-                  ? () => save()
-                  : null,
-              child: Text(
-                _isSynchronizing ? 'Synchronizing...' : 'Save',
-              ),
-            ),
-            SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  void save() async {
+    final machineData = ref.read(machineDataProvider);
+    final inputsState = ref.read(inputsTabProvider);
+    final bleNotifier = ref.read(bleProvider.notifier);
+    final overlayNotifier = ref.read(processingOverlayProvider.notifier);
+    final messageNotifier = ref.read(globalMessageProvider.notifier);
+
+    final selectedMode = inputsState.selectedMode ?? machineData.func;
+    final input1 =
+        inputsState.selectedInput1 ??
+        (machineData.mode == 'V' ? 'Voltage' : 'Current');
+    final input2 =
+        inputsState.selectedInput2 ??
+        (machineData.mode == 'V' ? 'Voltage' : 'Current');
+
+    if (machineData.pin15) {
+      messageNotifier.showError(
+        "Turn off Pin 15 to edit settings",
+      );
+      return;
+    }
+
+    if (selectedMode == '196' && input1.toUpperCase() != input2.toUpperCase()) {
+      messageNotifier.showError(
+        "Both inputs must match in Mode 196",
+      );
+      return;
+    }
+
+    overlayNotifier.state = true;
+    setState(() => _isSynchronizing = true);
+
+    // Build atomic command
+    final unit = input1.toUpperCase();
+    final shortUnit = unit == 'VOLTAGE' ? 'V' : 'C';
+    final modeChanged = selectedMode != machineData.func;
+    final String command;
+
+    if (modeChanged) {
+      command = '$selectedMode:$shortUnit';
+    } else {
+      command = unit;
+    }
+
+    _logger.d("Save — mode=$selectedMode, input1=$input1, input2=$input2");
+    _logger.d(
+      "Save — modeChanged=$modeChanged, machineFunc=${machineData.func}, hardwareMode=${machineData.mode}",
+    );
+    _logger.d("Save — sending command: $command");
+
+    bool writeOk = await bleNotifier.writeToCharacteristic(command);
+
+    if (!writeOk) {
+      overlayNotifier.state = false;
+      setState(() => _isSynchronizing = false);
+      messageNotifier.showError("Failed to send command");
+      return;
+    }
+
+    // Wait for ESP to acknowledge the command (transition → true)
+    final ackDeadline = DateTime.now().add(const Duration(seconds: 3));
+    bool acknowledged = false;
+    while (DateTime.now().isBefore(ackDeadline)) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (ref.read(machineDataProvider).transition) {
+        acknowledged = true;
+        break;
+      }
+    }
+
+    if (!acknowledged) {
+      overlayNotifier.state = false;
+      setState(() => _isSynchronizing = false);
+      bleNotifier.setBusy(false);
+      messageNotifier.showError("Device not responding");
+      return;
+    }
+
+    // Wait for hardware to finish (transition → false)
+    final doneDeadline = DateTime.now().add(const Duration(seconds: 10));
+    bool completed = false;
+    while (DateTime.now().isBefore(doneDeadline)) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!ref.read(machineDataProvider).transition) {
+        completed = true;
+        break;
+      }
+    }
+
+    if (completed) {
+      overlayNotifier.state = false;
+      setState(() => _isSynchronizing = false);
+      ref.read(inputsTabProvider.notifier).reset();
+      messageNotifier.showSuccess("Mode and unit saved");
+    } else {
+      overlayNotifier.state = false;
+      setState(() => _isSynchronizing = false);
+      bleNotifier.setBusy(false);
+      messageNotifier.showError(
+        "Device update timed out",
+      );
+    }
   }
 }

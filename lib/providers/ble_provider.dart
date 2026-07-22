@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
@@ -13,6 +14,8 @@ class BleState {
   final String characteristicValue;
   final BluetoothConnectionState connState;
   final String? errorMessage;
+  final List<String> serialLog;
+  final bool isBusy;
 
   const BleState({
     this.isScanning = false,
@@ -21,6 +24,8 @@ class BleState {
     this.characteristicValue = '',
     this.connState = BluetoothConnectionState.disconnected,
     this.errorMessage,
+    this.serialLog = const [],
+    this.isBusy = false,
   });
 
   BleState copyWith({
@@ -32,6 +37,8 @@ class BleState {
     String? errorMessage,
     bool clearConnectedDevice = false,
     bool clearError = false,
+    List<String>? serialLog,
+    bool? isBusy,
   }) {
     return BleState(
       isScanning: isScanning ?? this.isScanning,
@@ -42,6 +49,8 @@ class BleState {
       characteristicValue: characteristicValue ?? this.characteristicValue,
       connState: connState ?? this.connState,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      serialLog: serialLog ?? this.serialLog,
+      isBusy: isBusy ?? this.isBusy,
     );
   }
 }
@@ -62,9 +71,12 @@ class BleNotifier extends Notifier<BleState> {
   // BLE Service and Characteristic UUIDs
   final Guid serviceUuid = Guid("12345678-1234-5678-1234-56789abcdef0");
   final Guid charUuid = Guid("12345678-1234-5678-1234-56789abcdef1");
+  final Guid logServiceUuid = Guid("12345678-1234-5678-1234-56789abcdef2");
+  final Guid logCharUuid = Guid("12345678-1234-5678-1234-56789abcdef3");
 
   StreamSubscription? _connSub;
   StreamSubscription? _scanningSub;
+  StreamSubscription? _logSub;
 
   @override
   BleState build() {
@@ -84,6 +96,7 @@ class BleNotifier extends Notifier<BleState> {
   void _cleanup() {
     _connSub?.cancel();
     _scanningSub?.cancel();
+    _logSub?.cancel();
     if (state.connectedDevice != null) {
       state.connectedDevice!.disconnect();
     }
@@ -116,14 +129,21 @@ class BleNotifier extends Notifier<BleState> {
     }
   }
 
-  // 1. Add a flag to prevent auto-reconnect during manual disconnect
-  bool _isManualDisconnect = false;
-
   Future<bool> connectToDevice(BluetoothDevice device) async {
     try {
-      _isManualDisconnect = false; // Reset flag
       state = state.copyWith(isConnecting: true);
       await FlutterBluePlus.stopScan();
+
+      // Small delay to let the Bluetooth stack settle after stopping scan
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      // Disconnect first to clear stale GATT state (fixes ANDROID_SPECIFIC_ERROR)
+      try {
+        await device.disconnect();
+      } catch (_) {
+        // Ignore — device was already disconnected
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
 
       await device.connect(
         license: License.free,
@@ -132,20 +152,8 @@ class BleNotifier extends Notifier<BleState> {
       );
 
       // ONLY setup the listener if it's null to avoid duplicates
-      _connSub ??= device.connectionState.listen((s) async {
+      _connSub ??= device.connectionState.listen((s) {
         state = state.copyWith(connState: s);
-
-        // Only auto-reconnect if it wasn't a manual disconnect
-        if (s == BluetoothConnectionState.disconnected &&
-            !_isManualDisconnect) {
-          logger.w("Unexpected disconnect — retrying...");
-          // await Future.delayed(const Duration(seconds: 2));
-          // connectToDevice(device);
-        }
-        if (s == BluetoothConnectionState.connected) {
-          // Reset manual disconnect flag on successful connection
-          _isManualDisconnect = false;
-        }
       });
 
       await device.connectionState
@@ -164,14 +172,17 @@ class BleNotifier extends Notifier<BleState> {
 
   Future<bool> disconnectFromDevice() async {
     if (state.connectedDevice != null) {
-      _isManualDisconnect = true; // Set flag to stop auto-reconnect
-      _connSub?.cancel(); // Kill the listener
+      _connSub?.cancel();
       _connSub = null;
+      _logSub?.cancel();
+      _logSub = null;
 
       await state.connectedDevice!.disconnect();
       state = state.copyWith(
         clearConnectedDevice: true,
         characteristicValue: '',
+        serialLog: [],
+        isBusy: false,
       );
       return true;
     }
@@ -198,6 +209,7 @@ class BleNotifier extends Notifier<BleState> {
 
       for (var service in services) {
         logger.d("Found Service: ${service.uuid}");
+
         if (service.uuid == serviceUuid) {
           for (var characteristic in service.characteristics) {
             logger.d(
@@ -213,15 +225,36 @@ class BleNotifier extends Notifier<BleState> {
 
                 characteristic.onValueReceived.listen((value) {
                   final decoded = utf8.decode(value, allowMalformed: true);
-                  logger.d("Received BLE Data: $decoded");
+                  // logger.d("Received BLE Data: $decoded");
                   state = state.copyWith(characteristicValue: decoded);
+                  if (decoded.contains('TRANSITION:False')) {
+                    state = state.copyWith(isBusy: false);
+                  }
                 });
-
-                return;
               } else {
                 logger.w(
                   "Characteristic ${characteristic.uuid} does not support notify or indicate",
                 );
+              }
+            }
+          }
+        }
+
+        if (service.uuid == logServiceUuid) {
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid == logCharUuid) {
+              if (characteristic.properties.notify ||
+                  characteristic.properties.indicate) {
+                await characteristic.setNotifyValue(true);
+                logger.i("Subscribed to log characteristic");
+
+                _logSub = characteristic.onValueReceived.listen((value) {
+                  final decoded = utf8.decode(value, allowMalformed: true);
+                  final ts = _timestamp();
+                  final updated = [...state.serialLog, "$ts LOG: $decoded"];
+                  updated.removeRange(0, max(0, updated.length - 500));
+                  state = state.copyWith(serialLog: updated);
+                });
               }
             }
           }
@@ -240,6 +273,13 @@ class BleNotifier extends Notifier<BleState> {
       return false;
     }
 
+    if (state.isBusy) {
+      logger.w("⚠️ Dropped command (busy): $data");
+      return false;
+    }
+
+    setBusy(true);
+
     try {
       List<BluetoothService> services = await state.connectedDevice!
           .discoverServices();
@@ -250,7 +290,10 @@ class BleNotifier extends Notifier<BleState> {
             if (characteristic.uuid == charUuid) {
               if (characteristic.properties.write) {
                 await characteristic.write(data.codeUnits);
-                state = state.copyWith(clearError: true);
+                final ts = _timestamp();
+                final updated = [...state.serialLog, "$ts TX: $data"];
+                updated.removeRange(0, max(0, updated.length - 500));
+                state = state.copyWith(clearError: true, serialLog: updated);
                 return true;
               } else {
                 logger.w(
@@ -258,6 +301,7 @@ class BleNotifier extends Notifier<BleState> {
                 );
                 state = state.copyWith(
                   errorMessage: "Characteristic is not writable",
+                  isBusy: false,
                 );
                 return false;
               }
@@ -265,10 +309,16 @@ class BleNotifier extends Notifier<BleState> {
           }
         }
       }
-      state = state.copyWith(errorMessage: "Characteristic not found");
+      state = state.copyWith(
+        errorMessage: "Characteristic not found",
+        isBusy: false,
+      );
       return false;
     } catch (e) {
-      state = state.copyWith(errorMessage: "Write error: ${e.toString()}");
+      state = state.copyWith(
+        errorMessage: "Write error: ${e.toString()}",
+        isBusy: false,
+      );
       return false;
     }
   }
@@ -317,7 +367,33 @@ class BleNotifier extends Notifier<BleState> {
   // Get the service UUID for filtering
   Guid get getServiceUuid => serviceUuid;
 
+  String _timestamp() {
+    final now = DateTime.now();
+    final h = now.hour.toString().padLeft(2, '0');
+    final m = now.minute.toString().padLeft(2, '0');
+    final s = now.second.toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+
+  void clearSerialLog() {
+    state = state.copyWith(serialLog: []);
+  }
+
   // Clear error message
+  // Set/clear the optimistic transition lock
+  void setBusy(bool value) {
+    state = state.copyWith(isBusy: value);
+    if (value) {
+      // Safety timeout: auto-clear after 8s if hardware never responds
+      Timer(const Duration(seconds: 8), () {
+        if (state.isBusy) {
+          logger.w("⚠️ Busy guard timed out — forcing unlock");
+          state = state.copyWith(isBusy: false);
+        }
+      });
+    }
+  }
+
   void clearError() {
     if (state.errorMessage != null) {
       state = state.copyWith(clearError: true);

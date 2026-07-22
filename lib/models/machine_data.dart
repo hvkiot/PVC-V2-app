@@ -55,6 +55,9 @@ class MachineData {
   @JsonKey(name: 'ADAPTER_VOLTAGE')
   final String voltage;
 
+  @JsonKey(name: 'TRANSITION')
+  final bool transition;
+
   MachineData({
     this.func = '0',
     this.inputA = 0.0,
@@ -71,6 +74,7 @@ class MachineData {
     this.coilCurrent = 0.0,
     this.firmwareVersion = '0.0.0',
     this.voltage = '24V',
+    this.transition = false,
   });
 
   // Connect to the generated factory
@@ -96,7 +100,7 @@ class MachineData {
           String value = kv[1];
 
           // Handle Boolean Conversion
-          if (key == 'PIN15' || key == 'PIN6' || key == 'ENABLE_B') {
+          if (key == 'PIN15' || key == 'PIN6' || key == 'ENABLE_B' || key == 'TRANSITION') {
             dataMap[key] = value.toLowerCase() == 'true';
           }
           // Handle Numeric Conversion (Double)

@@ -4,6 +4,7 @@ import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/app_text_card.dart';
 
 class ConfigScreen extends ConsumerStatefulWidget {
@@ -27,7 +28,14 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     final String mode = machineData.func;
 
     if (machineData.pin15) {
-      messageNotifier.showError("PIN 15 is Active - Disable to edit");
+      messageNotifier.showError("Turn off Pin 15 to edit settings");
+      return;
+    }
+
+    if (machineData.transition) {
+      messageNotifier.showError(
+        "Device is busy, please wait",
+      );
       return;
     }
 
@@ -39,7 +47,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
           ? configState.coilCurrent
           : machineData.coilCurrent;
       if (!isValid(checkVal)) {
-        messageNotifier.showError("Input out of range (500mA - 2600mA)");
+        messageNotifier.showError("Enter a value between 500 and 2600");
         return;
       }
     } else {
@@ -50,7 +58,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
           ? configState.coilBCurrent
           : machineData.coilBCurrent;
       if (!isValid(checkA) || !isValid(checkB)) {
-        messageNotifier.showError("Input out of range (500mA - 2600mA)");
+        messageNotifier.showError("Enter a value between 500 and 2600");
         return;
       }
     }
@@ -80,7 +88,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     if (commandsToSend.isEmpty) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
-      messageNotifier.showSuccess("No changes detected.");
+      messageNotifier.showSuccess("Nothing to save");
       return;
     }
 
@@ -91,18 +99,22 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
         allSuccess = false;
         break;
       }
-      await Future.delayed(const Duration(milliseconds: 3500));
+      // Wait for hardware to finish before next command
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (!ref.read(machineDataProvider).transition) break;
+      }
     }
 
     overlayNotifier.state = false;
     setState(() => _isSynchronizing = false);
 
     if (allSuccess) {
-      // SUCCESS! Wipe the UI drafts back to 0.0 so the screen snaps back to following the hardware truth
       configNotifier.reset(0.0, 0.0, 0.0);
-      messageNotifier.showSuccess("Configuration written to EEPROM");
+      messageNotifier.showSuccess("Settings saved to device");
     } else {
-      messageNotifier.showError("EEPROM write failed — transaction aborted");
+      messageNotifier.showError("Failed to save settings");
     }
   }
 
@@ -123,6 +135,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
 
     final String mode = machineData.func;
     final bool isPin15Active = machineData.pin15;
+    final bool isBusy = ref.watch(bleProvider).isBusy;
 
     // 2. BULLETPROOF DISPLAY RESOLUTION
     // If the UI draft is 0, fall back to Machine Truth. If > 0, show User's Draft.
@@ -149,101 +162,106 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     }
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'CURRENT MODE: $mode',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    if (isPin15Active) ...[
-                      const SizedBox(width: 10),
-                      Text(
-                        '(LOCKED)',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: theme.colorScheme.error,
-                          fontWeight: FontWeight.bold,
+      body: ResponsiveWrapper(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'CURRENT MODE: $mode',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.1,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            if (isPin15Active)
-              Padding(
-                padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                child: Text(
-                  "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    color: theme.colorScheme.error,
-                    fontStyle: FontStyle.italic,
+                        if (isPin15Active) ...[
+                          const SizedBox(width: 10),
+                          Text(
+                            '(LOCKED)',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              color: theme.colorScheme.error,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            const SizedBox(height: 10),
-            if (mode == '195') ...[
-              AppTextCard(
-                title: 'COIL Output Current',
-                currentValue: displayMain,
-                onChanged: (value) {
-                  if (value != null) {
-                    configNotifier.setCoilCurrent(value);
-                  }
-                },
-                icon: Icons.settings_input_component,
-                enabled: !isPin15Active,
-              ),
-            ] else ...[
-              AppTextCard(
-                title: 'COIL A Output Current',
-                currentValue: displayA,
-                onChanged: (value) {
-                  if (value != null) {
-                    configNotifier.setCoilACurrent(value);
-                  }
-                },
-                icon: Icons.settings_input_component,
-                enabled: !isPin15Active,
-              ),
-              Divider(
-                color: theme.colorScheme.onSurface.withAlpha(25),
-                thickness: 1,
-              ),
-              AppTextCard(
-                title: 'COIL B Output Current',
-                currentValue: displayB,
-                onChanged: (value) {
-                  if (value != null) {
-                    configNotifier.setCoilBCurrent(value);
-                  }
-                },
-                icon: Icons.settings_input_component,
-                enabled: !isPin15Active,
-              ),
-            ],
-            const Spacer(),
-            ElevatedButton(
-              onPressed: (isDirty && !isPin15Active && !_isSynchronizing)
-                  ? _saveConfig
-                  : null,
-              child: Text(
-                _isSynchronizing ? 'Synchronizing...' : 'Save Config',
-              ),
+                if (isPin15Active)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                    child: Text(
+                      "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: theme.colorScheme.error,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                if (mode == '195') ...[
+                  AppTextCard(
+                    title: 'COIL Output Current',
+                    currentValue: displayMain,
+                    onChanged: (value) {
+                      if (value != null) {
+                        configNotifier.setCoilCurrent(value);
+                      }
+                    },
+                    icon: Icons.settings_input_component,
+                    enabled: !isPin15Active && !isBusy,
+                  ),
+                ] else ...[
+                  AppTextCard(
+                    title: 'COIL A Output Current',
+                    currentValue: displayA,
+                    onChanged: (value) {
+                      if (value != null) {
+                        configNotifier.setCoilACurrent(value);
+                      }
+                    },
+                    icon: Icons.settings_input_component,
+                    enabled: !isPin15Active && !isBusy,
+                  ),
+                  Divider(
+                    color: theme.colorScheme.onSurface.withAlpha(25),
+                    thickness: 1,
+                  ),
+                  AppTextCard(
+                    title: 'COIL B Output Current',
+                    currentValue: displayB,
+                    onChanged: (value) {
+                      if (value != null) {
+                        configNotifier.setCoilBCurrent(value);
+                      }
+                    },
+                    icon: Icons.settings_input_component,
+                    enabled: !isPin15Active && !isBusy,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: (isDirty && !isPin15Active && !isBusy && !_isSynchronizing)
+                      ? _saveConfig
+                      : null,
+                  child: Text(
+                    _isSynchronizing ? 'Synchronizing...' : 'Save Config',
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
             ),
-            const SizedBox(height: 32),
-          ],
+          ),
         ),
       ),
     );

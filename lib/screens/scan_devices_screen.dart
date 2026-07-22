@@ -10,6 +10,7 @@ import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
+import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
 
 class AvailableDevicesScreen extends ConsumerStatefulWidget {
@@ -270,85 +271,91 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 20),
-              // Match Sketch Title
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.lightBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.brandBlue, width: 0.2),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    Column(
-                      children: [
-                        Text(
-                          'Designed & Developed by',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w500,
+        child: ResponsiveWrapper(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 20),
+                // Match Sketch Title
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBg,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.brandBlue, width: 0.2),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Column(
+                        children: [
+                          Text(
+                            'Designed & Developed by',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.black54,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                        Image.asset('assets/HVK.png', width: 100, height: 50),
-                      ],
-                    ),
-                    SizedBox(
-                      height: 60,
-                      child: VerticalDivider(
-                        color: Colors.red,
-                        thickness: 1.5,
-                        width: 15,
+                          Image.asset('assets/HVK.png', width: 100, height: 50),
+                        ],
                       ),
-                    ),
-                    Column(
-                      children: [
-                        Text(
-                          'Powered by',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      SizedBox(
+                        height: 60,
+                        child: VerticalDivider(
+                          color: Colors.red,
+                          thickness: 1.5,
+                          width: 15,
                         ),
-                        Image.asset('assets/WEST.png', width: 100, height: 50),
-                      ],
+                      ),
+                      Column(
+                        children: [
+                          Text(
+                            'Powered by',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.black54,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Image.asset(
+                            'assets/WEST.png',
+                            width: 100,
+                            height: 50,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Semantics(
+                  label: isScanning ? 'Scanning for devices' : 'Device list',
+                  child: Text(
+                    'SCANNING',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      letterSpacing: 2.0,
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Semantics(
-                label: isScanning ? 'Scanning for devices' : 'Device list',
-                child: Text(
-                  'SCANNING',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    letterSpacing: 2.0,
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: Card(
-                  margin: const EdgeInsets.symmetric(vertical: 20),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: deviceList(),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: Card(
+                    margin: const EdgeInsets.symmetric(vertical: 20),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      child: deviceList(),
+                    ),
                   ),
                 ),
-              ),
 
-              // 3. Action Buttons
-              connectButton(),
-              const SizedBox(height: 12),
-            ],
+                // 3. Action Buttons
+                connectButton(),
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
       ),

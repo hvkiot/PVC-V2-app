@@ -69,7 +69,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!isConnected && index != 0) {
       ref
           .read(globalMessageProvider.notifier)
-          .showError("COMMUNICATION LOSS: Reconnect to access this module");
+          .showError("Connection lost — reconnect to use this tab");
       return; // Exit function, preventing the tab change
     }
     setState(() {
@@ -87,8 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         Color textColor = Colors.white;
 
         if (next.type == MessageType.success) {
-          bgColor = isDark ? AppColors.brandCyan : Colors.green;
-          if (isDark) textColor = Colors.black;
+          bgColor = AppColors.brandGreen;
         } else {
           bgColor = isDark ? AppColors.brandRed.withAlpha(200) : Colors.red;
         }
@@ -105,7 +104,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               borderRadius: BorderRadius.circular(10),
               side: BorderSide(
                 color: next.type == MessageType.success
-                    ? AppColors.brandCyan
+                    ? AppColors.brandGreen
                     : AppColors.brandRed,
                 width: 1,
               ),
@@ -124,11 +123,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final pamIsConnected = ref.watch(machineDataProvider).func == "None"
         ? false
         : true;
+    final isBusy = ref.watch(bleProvider).isBusy;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+          return;
+        }
         final router = GoRouter.of(context);
         await ref.read(bleProvider.notifier).disconnectFromDevice();
         if (mounted) router.go(AppRoutes.home);
@@ -141,7 +145,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           title: pamIsConnected ? title() : "PAM NOT CONNECTED",
           preferredSizeChild: PreferredSize(
             preferredSize: const Size.fromHeight(kToolbarHeight),
-            child: isProcessing
+            child: isProcessing || isBusy
                 ? LinearProgressIndicator(
                     color: theme.colorScheme.primary,
                     backgroundColor: theme.colorScheme.onSurface.withValues(
@@ -151,13 +155,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 : Container(),
           ),
           actions: [
-            pamIsConnected
-                ? IconButton(
-                    icon: const Icon(Icons.menu, size: 36),
-
-                    onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-                  )
-                : SizedBox.shrink(),
+            IconButton(
+              icon: const Icon(Icons.menu, size: 36),
+              onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+            ),
           ],
         ),
         body: pamIsConnected ? _children[_currentIndex] : _buildNoPamScreen(),
@@ -293,7 +294,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     : () async {
                         ref
                             .read(globalMessageProvider.notifier)
-                            .showError("Reconnecting to PAM...");
+                            .showError("Reconnecting...");
                         // Reconnect logic - you may need to reinitialize USB Host
                         // For now, just reset the connection or reload the device
                         await bleNotifier.connectToDevice(device);

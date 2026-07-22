@@ -8,6 +8,7 @@ import 'package:pvc_v2/routes/static_routes.dart';
 import 'package:pvc_v2/screens/ota_screens/ota_screen.dart';
 import 'package:pvc_v2/screens/scan_devices_screen.dart';
 import 'package:pvc_v2/screens/home_screen.dart';
+import 'package:pvc_v2/screens/serial_monitor_screen.dart';
 
 final GoRouter router = GoRouter(
   initialLocation: AppRoutes.home,
@@ -30,6 +31,10 @@ final GoRouter router = GoRouter(
         GoRoute(
           path: AppRoutes.ota,
           builder: (context, state) => const OtaScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.serialMonitor,
+          builder: (context, state) => const SerialMonitorScreen(),
         ),
       ],
     ),
