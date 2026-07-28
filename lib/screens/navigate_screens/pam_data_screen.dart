@@ -2,9 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
-import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/utils/unit_converter.dart';
@@ -18,50 +16,17 @@ class PamDataScreen extends ConsumerStatefulWidget {
 }
 
 class _PamDataScreenState extends ConsumerState<PamDataScreen> {
-  // Debounce timer to prevent excessive rebuilds
   Timer? _updateTimer;
 
   @override
   void dispose() {
-    _connSub?.cancel();
     _updateTimer?.cancel();
-    _hasNavigatedBack = true;
     super.dispose();
   }
-
-  StreamSubscription<BluetoothConnectionState>? _connSub;
-  bool _hasNavigatedBack = false;
 
   @override
   void initState() {
     super.initState();
-    // Listen to connection state changes on the device directly
-    _connSub = widget.device.connectionState.listen((state) {
-      if (!mounted) return;
-      if (state == BluetoothConnectionState.disconnected &&
-          !_hasNavigatedBack) {
-        _navigateBackToScan();
-      }
-    });
-  }
-
-  void _navigateBackToScan() {
-    if (_hasNavigatedBack) return;
-    _hasNavigatedBack = true;
-
-    // Show a message to the user
-    if (mounted) {
-      ref
-          .read(globalMessageProvider.notifier)
-          .showError('Device disconnected');
-
-      // Navigate back after a short delay
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          context.go('/');
-        }
-      });
-    }
   }
 
   @override

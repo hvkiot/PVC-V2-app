@@ -27,15 +27,8 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
 
     final String mode = machineData.func;
 
-    if (machineData.pin15) {
-      messageNotifier.showError("Turn off Pin 15 to edit settings");
-      return;
-    }
-
     if (machineData.transition) {
-      messageNotifier.showError(
-        "Device is busy, please wait",
-      );
+      messageNotifier.showError("Device is busy, please wait");
       return;
     }
 
@@ -112,7 +105,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
 
     if (allSuccess) {
       configNotifier.reset(0.0, 0.0, 0.0);
-      messageNotifier.showSuccess("Settings saved to device");
+      messageNotifier.showSuccess("Settings updated successfully");
     } else {
       messageNotifier.showError("Failed to save settings");
     }
@@ -251,7 +244,11 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                 ],
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: (isDirty && !isPin15Active && !isBusy && !_isSynchronizing)
+                  onPressed:
+                      (isDirty &&
+                          !isPin15Active &&
+                          !isBusy &&
+                          !_isSynchronizing)
                       ? _saveConfig
                       : null,
                   child: Text(

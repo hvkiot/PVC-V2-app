@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:logger/logger.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
@@ -16,16 +15,6 @@ class InputScreen extends ConsumerStatefulWidget {
 }
 
 class _InputScreenState extends ConsumerState<InputScreen> {
-  final Logger _logger = Logger(
-    printer: PrettyPrinter(
-      methodCount: 0,
-      errorMethodCount: 5,
-      lineLength: 80,
-      colors: true,
-      printEmojis: true,
-    ),
-  );
-
   bool _isSynchronizing = false;
 
   @override
@@ -169,17 +158,8 @@ class _InputScreenState extends ConsumerState<InputScreen> {
         inputsState.selectedInput2 ??
         (machineData.mode == 'V' ? 'Voltage' : 'Current');
 
-    if (machineData.pin15) {
-      messageNotifier.showError(
-        "Turn off Pin 15 to edit settings",
-      );
-      return;
-    }
-
     if (selectedMode == '196' && input1.toUpperCase() != input2.toUpperCase()) {
-      messageNotifier.showError(
-        "Both inputs must match in Mode 196",
-      );
+      messageNotifier.showError("Both inputs must match in Mode 196");
       return;
     }
 
@@ -197,12 +177,6 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     } else {
       command = unit;
     }
-
-    _logger.d("Save — mode=$selectedMode, input1=$input1, input2=$input2");
-    _logger.d(
-      "Save — modeChanged=$modeChanged, machineFunc=${machineData.func}, hardwareMode=${machineData.mode}",
-    );
-    _logger.d("Save — sending command: $command");
 
     bool writeOk = await bleNotifier.writeToCharacteristic(command);
 
@@ -247,14 +221,12 @@ class _InputScreenState extends ConsumerState<InputScreen> {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
       ref.read(inputsTabProvider.notifier).reset();
-      messageNotifier.showSuccess("Mode and unit saved");
+      messageNotifier.showSuccess("Settings updated successfully");
     } else {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
       bleNotifier.setBusy(false);
-      messageNotifier.showError(
-        "Device update timed out",
-      );
+      messageNotifier.showError("Device update timed out");
     }
   }
 }

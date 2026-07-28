@@ -135,15 +135,7 @@ class BleNotifier extends Notifier<BleState> {
       await FlutterBluePlus.stopScan();
 
       // Small delay to let the Bluetooth stack settle after stopping scan
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      // Disconnect first to clear stale GATT state (fixes ANDROID_SPECIFIC_ERROR)
-      try {
-        await device.disconnect();
-      } catch (_) {
-        // Ignore — device was already disconnected
-      }
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 300));
 
       await device.connect(
         license: License.free,

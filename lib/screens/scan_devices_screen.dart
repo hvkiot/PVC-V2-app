@@ -12,6 +12,7 @@ import 'package:pvc_v2/routes/static_routes.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 class AvailableDevicesScreen extends ConsumerStatefulWidget {
   const AvailableDevicesScreen({super.key});
@@ -22,8 +23,9 @@ class AvailableDevicesScreen extends ConsumerStatefulWidget {
 }
 
 class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final List<BluetoothDevice> validDevices = [];
+  final List<BluetoothDevice> _pendingDevices = [];
   bool isScanning = false;
   BluetoothDevice? selectedDevice;
   bool _justConnected =
@@ -33,10 +35,25 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   late StreamSubscription<BluetoothAdapterState> _adapterStateSubscription;
   StreamSubscription<List<ScanResult>>? _scanSub;
   bool _isLocationServiceEnabled = true;
+  DateTime? _scanStartTime;
+  DateTime? _lastScanEnd;
+  static const Duration _scanCooldown = Duration(seconds: 3);
+  static const Duration _minScanDuration = Duration(seconds: 2);
+  bool _acceptResults = false;
+  bool _isReScan = false;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 0.3).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
     WidgetsBinding.instance.addObserver(this);
     validDevices.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,6 +69,35 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
             _isLocationServiceEnabled &&
             !isScanning) {
           _startScanning();
+        }
+      }
+    });
+
+    _scanSub = FlutterBluePlus.scanResults.listen((results) {
+      if (!_acceptResults || !mounted) return;
+      for (var result in results) {
+        final name = result.device.platformName.trim();
+        if (name.isEmpty ||
+            name.toLowerCase().contains('unknown') ||
+            name.toLowerCase().contains('device')) {
+          continue;
+        }
+        final isPending = _pendingDevices.any(
+          (d) => d.remoteId == result.device.remoteId,
+        );
+        if (validDevices.any((d) => d.remoteId == result.device.remoteId) ||
+            isPending) {
+          continue;
+        }
+        if (_isReScan) {
+          final elapsed = DateTime.now().difference(_scanStartTime!);
+          if (elapsed < _minScanDuration) {
+            setState(() => _pendingDevices.add(result.device));
+          } else {
+            setState(() => validDevices.add(result.device));
+          }
+        } else {
+          setState(() => validDevices.add(result.device));
         }
       }
     });
@@ -83,6 +129,7 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _pulseController.dispose();
     _adapterStateSubscription.cancel();
     _scanSub?.cancel();
     FlutterBluePlus.stopScan();
@@ -118,6 +165,11 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
 
   Future<void> _startScanning() async {
     if (_adapterState != BluetoothAdapterState.on) return;
+    if (isScanning) return;
+    if (_lastScanEnd != null &&
+        DateTime.now().difference(_lastScanEnd!) < _scanCooldown) {
+      return;
+    }
 
     // Double check location service on Android
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -130,9 +182,15 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
       }
     }
 
+    _isReScan = validDevices.isNotEmpty;
+
     setState(() {
       isScanning = true;
-      validDevices.clear();
+      _scanStartTime = DateTime.now();
+      _pendingDevices.clear();
+      if (_isReScan) {
+        validDevices.clear();
+      }
     });
 
     // Check permissions
@@ -143,7 +201,10 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     if (!scanStatus.isGranted ||
         !connectStatus.isGranted ||
         !locationStatus.isGranted) {
-      setState(() => isScanning = false);
+      setState(() {
+        isScanning = false;
+        _lastScanEnd = DateTime.now();
+      });
       ref
           .read(globalMessageProvider.notifier)
           .showError("Bluetooth permissions not granted");
@@ -152,37 +213,57 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
 
     try {
       final serviceUuid = ref.read(bleProvider.notifier).getServiceUuid;
+      _acceptResults = true;
 
-      // Cancel previous subscription to avoid duplicates
-      _scanSub?.cancel();
+      // On some devices (Huawei), BLE scans are limited to ~200ms.
+      // Retry multiple times to accumulate enough scan time.
+      const int maxRetries = 5;
+      int retries = 0;
+      while (retries < maxRetries) {
+        retries++;
+        if (retries > 1) {
+          await Future.delayed(const Duration(milliseconds: 400));
+        }
+        await FlutterBluePlus.startScan(
+          withServices: [serviceUuid],
+          timeout: const Duration(seconds: 10),
+        );
+        await Future.delayed(const Duration(milliseconds: 50));
+        final hasDevices =
+            validDevices.isNotEmpty || _pendingDevices.isNotEmpty;
+        final elapsed = DateTime.now().difference(_scanStartTime!);
+        if (hasDevices || elapsed >= const Duration(seconds: 3)) break;
+      }
 
-      // Subscribe to scan results BEFORE starting scan
-      // so devices appear immediately as they're discovered
-      _scanSub = FlutterBluePlus.scanResults.listen((results) {
-        for (var result in results) {
-          if (validDevices.any((d) => d.remoteId == result.device.remoteId)) {
-            continue;
+      _acceptResults = false;
+
+      if (mounted) {
+        if (_isReScan) {
+          // Enforce minimum scan duration so re-scan doesn't look instant
+          final elapsed = DateTime.now().difference(_scanStartTime!);
+          if (elapsed < _minScanDuration) {
+            await Future.delayed(_minScanDuration - elapsed);
           }
-          final advertisedServices = result.advertisementData.serviceUuids;
-          if (advertisedServices.contains(serviceUuid)) {
-            if (mounted) {
-              setState(() {
-                validDevices.add(result.device);
-              });
-            }
+          // Flush pending devices into valid list
+          if (_pendingDevices.isNotEmpty && mounted) {
+            setState(() {
+              validDevices.addAll(_pendingDevices);
+              _pendingDevices.clear();
+            });
           }
         }
-      });
-
-      // Start scan — await blocks until the 10s timeout or stopScan
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
-
-      if (mounted) {
-        setState(() => isScanning = false);
+        setState(() {
+          isScanning = false;
+          _lastScanEnd = DateTime.now();
+        });
       }
     } catch (e) {
+      _acceptResults = false;
       if (mounted) {
-        setState(() => isScanning = false);
+        setState(() {
+          isScanning = false;
+          _lastScanEnd = DateTime.now();
+        });
         if (!e.toString().contains("turned on")) {
           ref.read(globalMessageProvider.notifier).showError(e.toString());
         }
@@ -195,9 +276,17 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     try {
       await FlutterBluePlus.stopScan();
 
-      final success = await ref
-          .read(bleProvider.notifier)
-          .connectToDevice(device);
+      bool success = false;
+      for (int attempt = 0; attempt < 2 && !success; attempt++) {
+        if (attempt > 0) {
+          if (!mounted) return;
+          ref
+              .read(globalMessageProvider.notifier)
+              .showError("Retrying connection...");
+          await Future.delayed(const Duration(seconds: 1));
+        }
+        success = await ref.read(bleProvider.notifier).connectToDevice(device);
+      }
 
       if (mounted) {
         if (success) {
@@ -266,7 +355,9 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
                   ? colorScheme.onSurfaceVariant
                   : colorScheme.primary,
             ),
-            onPressed: () => isScanning ? null : _startScanning(),
+            onPressed: () {
+              isScanning ? null : _startScanning();
+            },
           ),
         ],
       ),
@@ -279,65 +370,23 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
               children: [
                 const SizedBox(height: 20),
                 // Match Sketch Title
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.lightBg,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.brandBlue, width: 0.2),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Column(
-                        children: [
-                          Text(
-                            'Designed & Developed by',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Image.asset('assets/HVK.png', width: 100, height: 50),
-                        ],
-                      ),
-                      SizedBox(
-                        height: 60,
-                        child: VerticalDivider(
-                          color: Colors.red,
-                          thickness: 1.5,
-                          width: 15,
-                        ),
-                      ),
-                      Column(
-                        children: [
-                          Text(
-                            'Powered by',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.black54,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Image.asset(
-                            'assets/WEST.png',
-                            width: 100,
-                            height: 50,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                brandButton(),
                 const SizedBox(height: 20),
                 Semantics(
                   label: isScanning ? 'Scanning for devices' : 'Device list',
-                  child: Text(
-                    'SCANNING',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      letterSpacing: 2.0,
-                    ),
+                  child: AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Opacity(
+                        opacity: isScanning ? _pulseAnimation.value : 1.0,
+                        child: Text(
+                          isScanning ? 'SCANNING' : 'AVAILABLE DEVICES',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -358,6 +407,84 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Container brandButton() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.lightBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.brandBlue, width: 0.2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          InkWell(
+            onTap: () async {
+              try {
+                await launchUrlString(
+                  'https://hvksystems.in/',
+                  mode: LaunchMode.externalApplication,
+                );
+              } catch (e) {
+                ref
+                    .read(globalMessageProvider.notifier)
+                    .showError("Could not open HVK website");
+              }
+            },
+            child: Column(
+              children: [
+                Text(
+                  'Designed & Developed by',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Image.asset('assets/HVK.png', width: 100, height: 50),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 60,
+            child: VerticalDivider(
+              color: Colors.red,
+              thickness: 1.5,
+              width: 15,
+            ),
+          ),
+          InkWell(
+            onTap: () async {
+              try {
+                await launchUrlString(
+                  'https://www.w-e-st.de/wp/en/',
+                  mode: LaunchMode.externalApplication,
+                );
+              } catch (e) {
+                ref
+                    .read(globalMessageProvider.notifier)
+                    .showError("Could not open WEST website");
+              }
+            },
+            child: Column(
+              children: [
+                Text(
+                  'Powered by',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Image.asset('assets/WEST.png', width: 100, height: 50),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -473,34 +600,43 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
 
   Widget _shimmerItem() {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withAlpha(50)),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: theme.disabledColor.withAlpha(30),
-              borderRadius: BorderRadius.circular(12),
-            ),
+    return AnimatedBuilder(
+      animation: _pulseAnimation,
+      builder: (context, child) {
+        return Opacity(
+          opacity: _pulseAnimation.value.clamp(0.3, 0.7),
+          child: child,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: theme.dividerColor.withAlpha(50)),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Container(
-              height: 16,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
                 color: theme.disabledColor.withAlpha(30),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Container(
+                height: 16,
+                decoration: BoxDecoration(
+                  color: theme.disabledColor.withAlpha(30),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -549,33 +685,45 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
       itemBuilder: (context, index) {
         final device = validDevices[index];
         final isSelected = selectedDevice?.remoteId == device.remoteId;
+        final displayName = device.platformName.isNotEmpty
+            ? device.platformName
+            : 'Device · ${device.remoteId.toString().substring(device.remoteId.toString().length - 4).toUpperCase()}';
 
-        return Semantics(
-          label:
-              '${device.platformName.isEmpty ? 'Unknown' : device.platformName} device',
-          button: true,
-          selected: isSelected,
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            child: ListTile(
-              selected: isSelected,
-              title: Text(
-                device.platformName.isEmpty
-                    ? 'Unknown Device'
-                    : device.platformName,
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0.0, end: 1.0),
+          duration: Duration(milliseconds: 400 + (index * 80)),
+          curve: Curves.easeOutCubic,
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, 20 * (1 - value)),
+                child: child,
               ),
-              trailing: isSelected
-                  ? const Icon(Icons.check_circle)
-                  : const Icon(Icons.radio_button_unchecked, size: 16),
-              onTap: () {
-                setState(() {
-                  if (isSelected) {
-                    selectedDevice = null;
-                  } else {
-                    selectedDevice = device;
-                  }
-                });
-              },
+            );
+          },
+          child: Semantics(
+            label: '$displayName device',
+            button: true,
+            selected: isSelected,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              child: ListTile(
+                selected: isSelected,
+                title: Text(displayName),
+                trailing: isSelected
+                    ? const Icon(Icons.check_circle)
+                    : const Icon(Icons.radio_button_unchecked, size: 16),
+                onTap: () {
+                  setState(() {
+                    if (isSelected) {
+                      selectedDevice = null;
+                    } else {
+                      selectedDevice = device;
+                    }
+                  });
+                },
+              ),
             ),
           ),
         );

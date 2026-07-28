@@ -29,58 +29,18 @@ class CustomDrawer extends ConsumerWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 125,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-              padding: EdgeInsets.all(8),
-              child: Semantics(
-                label: 'Designed and Developed by HVK',
-                image: true,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Designed & Developed by',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    Image.asset('assets/HVK.png'),
-                  ],
-                ),
-              ),
+                BrandCard(
+                  label: 'Designed and Developed by HVK',
+                  imagePath: 'assets/HVK.png',
+                  theme: theme,
+                  colorScheme: colorScheme,
                 ),
                 SizedBox(width: 10),
-                Container(
-                  width: 125,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-              padding: EdgeInsets.all(8),
-              child: Semantics(
-                label: 'Powered by WEST',
-                image: true,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Powered by',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center
-                    ),
-                    Image.asset('assets/WEST.png'),
-                  ],
-                ),
-              ),
+                BrandCard(
+                  label: 'Powered by WEST',
+                  imagePath: 'assets/WEST.png',
+                  theme: theme,
+                  colorScheme: colorScheme,
                 ),
                 SizedBox(width: 10),
               ],
@@ -204,6 +164,58 @@ class _DrawerItem extends StatelessWidget {
         ),
       ),
       onTap: onTap,
+    );
+  }
+}
+
+class BrandCard extends StatelessWidget {
+  final String label;
+  final String imagePath;
+  final ThemeData theme;
+  final ColorScheme colorScheme;
+
+  const BrandCard({
+    super.key,
+    required this.label,
+    required this.imagePath,
+    required this.theme,
+    required this.colorScheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 125,
+        height: 100,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Semantics(
+          label: label,
+          button: true,
+          enabled: true,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label.contains('HVK')
+                    ? 'Designed & Developed by'
+                    : 'Powered by',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 4),
+              Image.asset(imagePath),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,11 +27,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentIndex = 0;
   late final BluetoothDevice device;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  StreamSubscription<BluetoothConnectionState>? _connSub;
+  bool _hasNavigatedBack = false;
 
   @override
   void initState() {
     super.initState();
     device = widget.device;
+
+    _connSub = device.connectionState.listen((state) {
+      if (!mounted || _hasNavigatedBack) return;
+      if (state == BluetoothConnectionState.disconnected) {
+        _navigateBackToScan();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connSub?.cancel();
+    _hasNavigatedBack = true;
+    super.dispose();
+  }
+
+  void _navigateBackToScan() {
+    if (_hasNavigatedBack) return;
+    _hasNavigatedBack = true;
+
+    ref
+        .read(globalMessageProvider.notifier)
+        .showError('Device disconnected');
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) context.go('/');
+    });
   }
 
   late final List<Widget> _children = [
