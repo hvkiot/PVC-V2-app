@@ -54,9 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_hasNavigatedBack) return;
     _hasNavigatedBack = true;
 
-    ref
-        .read(globalMessageProvider.notifier)
-        .showError('Device disconnected');
+    ref.read(globalMessageProvider.notifier).showError('Device disconnected');
 
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) context.go('/');
@@ -150,9 +148,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final bleState = ref.watch(bleProvider);
     final isConnected = bleState.connectedDevice == device;
     final theme = Theme.of(context);
-    final pamIsConnected = ref.watch(machineDataProvider).func == "None"
-        ? false
-        : true;
+    final pamIsConnected = ref.watch(machineDataProvider).pamConnected;
     final isBusy = ref.watch(bleProvider).isBusy;
 
     return PopScope(

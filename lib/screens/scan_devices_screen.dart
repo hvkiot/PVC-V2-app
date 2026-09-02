@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_plus_platform_interface/flutter_blue_plus_platform_interface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -41,6 +42,7 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   static const Duration _minScanDuration = Duration(seconds: 2);
   bool _acceptResults = false;
   bool _isReScan = false;
+  bool _isStartingScan = false;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
 
@@ -56,7 +58,8 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
     );
     WidgetsBinding.instance.addObserver(this);
     validDevices.clear();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _forceStopNativeScan();
       _checkLocationService();
     });
 
@@ -100,7 +103,37 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
           setState(() => validDevices.add(result.device));
         }
       }
+    }, onError: (Object error) {
+      _onScanStreamError(error);
     });
+  }
+
+  /// Force the native scanner to stop, bypassing flutter_blue_plus's Dart-side
+  /// `isScanningNow` gate. After an app restart the native scan can survive while
+  /// the plugin's Dart state is fresh, so the public stopScan() is a no-op and the
+  /// next startScan() fails with SCAN_FAILED_ALREADY_STARTED.
+  Future<void> _forceStopNativeScan() async {
+    try {
+      await FlutterBluePlusPlatform.instance.stopScan(BmStopScanRequest());
+    } catch (_) {
+      // Plugin not ready or unsupported platform — nothing to force stop.
+    }
+  }
+
+  /// Recovers from a scan stream error (e.g. SCAN_FAILED_ALREADY_STARTED left over
+  /// from a previous app session): force-stop the native scanner, then re-scan.
+  Future<void> _onScanStreamError(Object error) async {
+    if (!mounted) return;
+    _acceptResults = false;
+    setState(() {
+      isScanning = false;
+    });
+    await _forceStopNativeScan();
+    if (!mounted) return;
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+    _lastScanEnd = null;
+    _startScanning();
   }
 
   /// Disconnect any lingering BLE connection when scan screen becomes the active route.
@@ -164,118 +197,128 @@ class _AvailableDevicesScreenState extends ConsumerState<AvailableDevicesScreen>
   }
 
   Future<void> _startScanning() async {
-    if (_adapterState != BluetoothAdapterState.on) return;
-    if (isScanning) return;
-    if (_lastScanEnd != null &&
-        DateTime.now().difference(_lastScanEnd!) < _scanCooldown) {
-      return;
-    }
-
-    // Double check location service on Android
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      final status = await Permission.location.serviceStatus;
-      if (!status.isEnabled) {
-        if (mounted) {
-          setState(() => _isLocationServiceEnabled = false);
-        }
-        return;
-      }
-    }
-
-    _isReScan = validDevices.isNotEmpty;
-
-    setState(() {
-      isScanning = true;
-      _scanStartTime = DateTime.now();
-      _pendingDevices.clear();
-      if (_isReScan) {
-        validDevices.clear();
-      }
-    });
-
-    // Check permissions
-    var scanStatus = await Permission.bluetoothScan.request();
-    var connectStatus = await Permission.bluetoothConnect.request();
-    var locationStatus = await Permission.location.request();
-
-    if (!scanStatus.isGranted ||
-        !connectStatus.isGranted ||
-        !locationStatus.isGranted) {
-      setState(() {
-        isScanning = false;
-        _lastScanEnd = DateTime.now();
-      });
-      ref
-          .read(globalMessageProvider.notifier)
-          .showError("Bluetooth permissions not granted");
-      return;
-    }
+    if (_isStartingScan) return;
+    _isStartingScan = true;
 
     try {
-      final serviceUuid = ref.read(bleProvider.notifier).getServiceUuid;
-      _acceptResults = true;
-
-      // On some devices (Huawei), BLE scans are limited to ~200ms.
-      // Retry multiple times to accumulate enough scan time.
-      const int maxRetries = 5;
-      int retries = 0;
-      while (retries < maxRetries) {
-        retries++;
-        if (retries > 1) {
-          await Future.delayed(const Duration(milliseconds: 400));
-        }
-        await FlutterBluePlus.startScan(
-          withServices: [serviceUuid],
-          timeout: const Duration(seconds: 10),
-        );
-        await Future.delayed(const Duration(milliseconds: 50));
-        final hasDevices =
-            validDevices.isNotEmpty || _pendingDevices.isNotEmpty;
-        final elapsed = DateTime.now().difference(_scanStartTime!);
-        if (hasDevices || elapsed >= const Duration(seconds: 3)) break;
+      if (_adapterState != BluetoothAdapterState.on) return;
+      if (isScanning) return;
+      if (_lastScanEnd != null &&
+          DateTime.now().difference(_lastScanEnd!) < _scanCooldown) {
+        return;
       }
 
-      _acceptResults = false;
+      // Clear any native scan left running from a previous app session before
+      // starting a fresh scan, so startScan() cannot fail with
+      // SCAN_FAILED_ALREADY_STARTED.
+      await _forceStopNativeScan();
 
-      if (mounted) {
+      // Double check location service on Android
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final status = await Permission.location.serviceStatus;
+        if (!status.isEnabled) {
+          if (mounted) {
+            setState(() => _isLocationServiceEnabled = false);
+          }
+          return;
+        }
+      }
+
+      _isReScan = validDevices.isNotEmpty;
+
+      setState(() {
+        isScanning = true;
+        _scanStartTime = DateTime.now();
+        _pendingDevices.clear();
         if (_isReScan) {
-          // Enforce minimum scan duration so re-scan doesn't look instant
+          validDevices.clear();
+        }
+      });
+
+      // Check permissions
+      var scanStatus = await Permission.bluetoothScan.request();
+      var connectStatus = await Permission.bluetoothConnect.request();
+      var locationStatus = await Permission.location.request();
+
+      if (!scanStatus.isGranted ||
+          !connectStatus.isGranted ||
+          !locationStatus.isGranted) {
+        setState(() {
+          isScanning = false;
+          _lastScanEnd = DateTime.now();
+        });
+        ref
+            .read(globalMessageProvider.notifier)
+            .showError("Bluetooth permissions not granted");
+        return;
+      }
+
+      try {
+        final serviceUuid = ref.read(bleProvider.notifier).getServiceUuid;
+        _acceptResults = true;
+
+        // On some devices (Huawei), BLE scans are limited to ~200ms.
+        // Retry multiple times to accumulate enough scan time.
+        const int maxRetries = 5;
+        int retries = 0;
+        while (retries < maxRetries) {
+          retries++;
+          if (retries > 1) {
+            await Future.delayed(const Duration(milliseconds: 400));
+          }
+          await FlutterBluePlus.startScan(
+            withServices: [serviceUuid],
+            timeout: const Duration(seconds: 10),
+          );
+          await Future.delayed(const Duration(milliseconds: 50));
+          final hasDevices =
+              validDevices.isNotEmpty || _pendingDevices.isNotEmpty;
           final elapsed = DateTime.now().difference(_scanStartTime!);
-          if (elapsed < _minScanDuration) {
-            await Future.delayed(_minScanDuration - elapsed);
+          if (hasDevices || elapsed >= const Duration(seconds: 3)) break;
+        }
+
+        _acceptResults = false;
+
+        if (mounted) {
+          if (_isReScan) {
+            // Enforce minimum scan duration so re-scan doesn't look instant
+            final elapsed = DateTime.now().difference(_scanStartTime!);
+            if (elapsed < _minScanDuration) {
+              await Future.delayed(_minScanDuration - elapsed);
+            }
+            // Flush pending devices into valid list
+            if (_pendingDevices.isNotEmpty && mounted) {
+              setState(() {
+                validDevices.addAll(_pendingDevices);
+                _pendingDevices.clear();
+              });
+            }
           }
-          // Flush pending devices into valid list
-          if (_pendingDevices.isNotEmpty && mounted) {
-            setState(() {
-              validDevices.addAll(_pendingDevices);
-              _pendingDevices.clear();
-            });
+          setState(() {
+            isScanning = false;
+            _lastScanEnd = DateTime.now();
+          });
+        }
+      } catch (e) {
+        _acceptResults = false;
+        if (mounted) {
+          setState(() {
+            isScanning = false;
+            _lastScanEnd = DateTime.now();
+          });
+          if (!e.toString().contains("turned on")) {
+            ref.read(globalMessageProvider.notifier).showError(e.toString());
           }
         }
-        setState(() {
-          isScanning = false;
-          _lastScanEnd = DateTime.now();
-        });
       }
-    } catch (e) {
-      _acceptResults = false;
-      if (mounted) {
-        setState(() {
-          isScanning = false;
-          _lastScanEnd = DateTime.now();
-        });
-        if (!e.toString().contains("turned on")) {
-          ref.read(globalMessageProvider.notifier).showError(e.toString());
-        }
-      }
+    } finally {
+      _isStartingScan = false;
     }
   }
 
   Future<void> _handleConnect(BluetoothDevice device) async {
     _justConnected = true;
     try {
-      await FlutterBluePlus.stopScan();
-
       bool success = false;
       for (int attempt = 0; attempt < 2 && !success; attempt++) {
         if (attempt > 0) {

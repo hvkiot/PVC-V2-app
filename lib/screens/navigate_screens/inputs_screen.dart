@@ -166,20 +166,21 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     overlayNotifier.state = true;
     setState(() => _isSynchronizing = true);
 
-    // Build atomic command
     final unit = input1.toUpperCase();
     final shortUnit = unit == 'VOLTAGE' ? 'V' : 'C';
     final modeChanged = selectedMode != machineData.func;
-    final String command;
 
+    bool success = false;
+
+    // ---------- SINGLE COMBINED PROTOCOL ----------
+    String command;
     if (modeChanged) {
-      command = '$selectedMode:$shortUnit';
+      command = '$selectedMode:$shortUnit'; // e.g., "196:V"
     } else {
-      command = unit;
+      command = unit; // e.g., "Voltage"
     }
 
     bool writeOk = await bleNotifier.writeToCharacteristic(command);
-
     if (!writeOk) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
@@ -187,7 +188,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
       return;
     }
 
-    // Wait for ESP to acknowledge the command (transition → true)
+    // Wait for acknowledgment (transition → true)
     final ackDeadline = DateTime.now().add(const Duration(seconds: 3));
     bool acknowledged = false;
     while (DateTime.now().isBefore(ackDeadline)) {
@@ -201,23 +202,32 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     if (!acknowledged) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
-      bleNotifier.setBusy(false);
-      messageNotifier.showError("Device not responding");
-      return;
-    }
+      success = false;
+    } else {
+      // Wait for hardware to finish (transition → false)
+      final doneDeadline = DateTime.now().add(const Duration(seconds: 10));
+      bool completed = false;
+      while (DateTime.now().isBefore(doneDeadline)) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (!ref.read(machineDataProvider).transition) {
+          completed = true;
+          break;
+        }
+      }
 
-    // Wait for hardware to finish (transition → false)
-    final doneDeadline = DateTime.now().add(const Duration(seconds: 10));
-    bool completed = false;
-    while (DateTime.now().isBefore(doneDeadline)) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (!ref.read(machineDataProvider).transition) {
-        completed = true;
-        break;
+      if (completed) {
+        success = true;
+      } else {
+        overlayNotifier.state = false;
+        setState(() => _isSynchronizing = false);
+        bleNotifier.setBusy(false);
+        messageNotifier.showError("Device update timed out");
+        return;
       }
     }
 
-    if (completed) {
+    // ---------- Handle final result ----------
+    if (success) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
       ref.read(inputsTabProvider.notifier).reset();
@@ -226,7 +236,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
       bleNotifier.setBusy(false);
-      messageNotifier.showError("Device update timed out");
+      messageNotifier.showError("Device update failed");
     }
   }
 }

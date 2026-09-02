@@ -11,6 +11,8 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+graphify-out/
+*.html
 
 # IntelliJ related
 *.iml

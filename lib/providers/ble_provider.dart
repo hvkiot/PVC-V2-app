@@ -16,8 +16,9 @@ class BleState {
   final String? errorMessage;
   final List<String> serialLog;
   final bool isBusy;
+  final MachineData machineData;
 
-  const BleState({
+  BleState({
     this.isScanning = false,
     this.connectedDevice,
     this.isConnecting = false,
@@ -26,6 +27,7 @@ class BleState {
     this.errorMessage,
     this.serialLog = const [],
     this.isBusy = false,
+    this.machineData = const MachineData(),
   });
 
   BleState copyWith({
@@ -39,6 +41,7 @@ class BleState {
     bool clearError = false,
     List<String>? serialLog,
     bool? isBusy,
+    MachineData? machineData,
   }) {
     return BleState(
       isScanning: isScanning ?? this.isScanning,
@@ -51,6 +54,7 @@ class BleState {
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       serialLog: serialLog ?? this.serialLog,
       isBusy: isBusy ?? this.isBusy,
+      machineData: machineData ?? this.machineData,
     );
   }
 }
@@ -76,7 +80,12 @@ class BleNotifier extends Notifier<BleState> {
 
   StreamSubscription? _connSub;
   StreamSubscription? _scanningSub;
+  StreamSubscription<List<int>>? _telemetrySub;
   StreamSubscription? _logSub;
+
+  // Cached main command characteristic.  It is set after service discovery
+  // and cleared on disconnect or before a new connect.
+  BluetoothCharacteristic? _cmdCharacteristic;
 
   @override
   BleState build() {
@@ -90,16 +99,20 @@ class BleNotifier extends Notifier<BleState> {
       _cleanup();
     });
 
-    return const BleState();
+    return BleState();
   }
 
   void _cleanup() {
     _connSub?.cancel();
     _scanningSub?.cancel();
+    _telemetrySub?.cancel();
     _logSub?.cancel();
+    _cmdCharacteristic = null;
     if (state.connectedDevice != null) {
       state.connectedDevice!.disconnect();
     }
+    // Reset machineData to default on full cleanup
+    state = state.copyWith(machineData: const MachineData());
   }
 
   Future<bool> scanDevices() async {
@@ -152,6 +165,8 @@ class BleNotifier extends Notifier<BleState> {
           .where((s) => s == BluetoothConnectionState.connected)
           .first;
       state = state.copyWith(connectedDevice: device);
+      // Cache will be cleared in _discoverServices; clear any stale reference
+      _cmdCharacteristic = null;
       await _discoverServices(device);
       return true;
     } catch (e) {
@@ -166,8 +181,11 @@ class BleNotifier extends Notifier<BleState> {
     if (state.connectedDevice != null) {
       _connSub?.cancel();
       _connSub = null;
+      _telemetrySub?.cancel();
+      _telemetrySub = null;
       _logSub?.cancel();
       _logSub = null;
+      _cmdCharacteristic = null;
 
       await state.connectedDevice!.disconnect();
       state = state.copyWith(
@@ -175,10 +193,24 @@ class BleNotifier extends Notifier<BleState> {
         characteristicValue: '',
         serialLog: [],
         isBusy: false,
+        machineData: const MachineData(),
       );
       return true;
     }
     return false;
+  }
+
+  /// Asks the kit to emit a fresh F| full snapshot.
+  ///
+  /// FUNC and MODE only travel in F| (full) and D| (delta) packets — the 200ms
+  /// L| live packet does not carry them. The kit emits one F| from its
+  /// onConnect handler, but that fires at GATT link-up, typically before this
+  /// side has finished MTU negotiation + service discovery and enabled
+  /// notifications, so the stack silently drops it. This asks for another one
+  /// at a moment when the notify channel is known to be open.
+  Future<bool> requestSync() async {
+    logger.i("→ SYNC (requesting full snapshot)");
+    return writeRawToCharacteristic('SYNC');
   }
 
   Future<void> _discoverServices(BluetoothDevice device) async {
@@ -189,6 +221,8 @@ class BleNotifier extends Notifier<BleState> {
         logger.w("Device not connected when attempting to discover services");
         return;
       }
+
+      bool foundMainService = false;
 
       List<BluetoothService> services;
       try {
@@ -208,21 +242,41 @@ class BleNotifier extends Notifier<BleState> {
               "Found Characteristic: ${characteristic.uuid} Properties: ${characteristic.properties}",
             );
             if (characteristic.uuid == charUuid) {
+              _cmdCharacteristic = characteristic;
               if (characteristic.properties.notify ||
                   characteristic.properties.indicate) {
+                await _telemetrySub?.cancel();
+                _telemetrySub = characteristic.onValueReceived.listen(
+                  (value) {
+                    final decoded = utf8.decode(value, allowMalformed: true);
+                    logger.d("Received BLE Data: $decoded");
+                    final merged = MachineData.mergeFromPacket(
+                      decoded,
+                      state.machineData,
+                    );
+                    state = state.copyWith(
+                      characteristicValue: decoded,
+                      machineData: merged,
+                    );
+                    if (decoded.contains('TRANSITION:False')) {
+                      state = state.copyWith(isBusy: false);
+                    }
+                  },
+                  onError: (error) {
+                    logger.e("Telemetry stream error: $error");
+                  },
+                );
                 await characteristic.setNotifyValue(true);
+                // Allow Android GATT stack to fully propagate notification enable
+                await Future.delayed(const Duration(milliseconds: 50));
                 logger.i(
                   "Subscribed to characteristic: ${characteristic.uuid}",
                 );
-
-                characteristic.onValueReceived.listen((value) {
-                  final decoded = utf8.decode(value, allowMalformed: true);
-                  // logger.d("Received BLE Data: $decoded");
-                  state = state.copyWith(characteristicValue: decoded);
-                  if (decoded.contains('TRANSITION:False')) {
-                    state = state.copyWith(isBusy: false);
-                  }
-                });
+                foundMainService = true;
+                // Notifications are live now, so ask for a full snapshot. The
+                // kit's connect-time F| was almost certainly emitted before
+                // this point and dropped by the stack.
+                await requestSync();
               } else {
                 logger.w(
                   "Characteristic ${characteristic.uuid} does not support notify or indicate",
@@ -253,7 +307,13 @@ class BleNotifier extends Notifier<BleState> {
         }
       }
 
-      state = state.copyWith(errorMessage: "Service not found - check logs");
+      // Only an actual miss is an error. This used to run unconditionally, so
+      // every successful connect also raised "Service not found".
+      if (!foundMainService) {
+        state = state.copyWith(errorMessage: "Service not found - check logs");
+      } else {
+        state = state.copyWith(clearError: true);
+      }
     } catch (e) {
       logger.e("Error discovering services", error: e);
     }
@@ -272,45 +332,46 @@ class BleNotifier extends Notifier<BleState> {
 
     setBusy(true);
 
-    try {
-      List<BluetoothService> services = await state.connectedDevice!
-          .discoverServices();
+    bool ok = await _performWrite(data);
+    if (!ok) {
+      state = state.copyWith(isBusy: false);
+    }
+    return ok;
+  }
 
-      for (var service in services) {
-        if (service.uuid == serviceUuid) {
-          for (var characteristic in service.characteristics) {
-            if (characteristic.uuid == charUuid) {
-              if (characteristic.properties.write) {
-                await characteristic.write(data.codeUnits);
-                final ts = _timestamp();
-                final updated = [...state.serialLog, "$ts TX: $data"];
-                updated.removeRange(0, max(0, updated.length - 500));
-                state = state.copyWith(clearError: true, serialLog: updated);
-                return true;
-              } else {
-                logger.w(
-                  "Characteristic ${characteristic.properties.write} $data is not writable",
-                );
-                state = state.copyWith(
-                  errorMessage: "Characteristic is not writable",
-                  isBusy: false,
-                );
-                return false;
-              }
-            }
-          }
-        }
-      }
-      state = state.copyWith(
-        errorMessage: "Characteristic not found",
-        isBusy: false,
-      );
+  /// Writes to the characteristic WITHOUT the busy lock and WITHOUT setting
+  /// busy. Used for old-kit multi-part commands (mode + unit) so the second
+  /// write isn't dropped while the first still holds the busy flag.
+  Future<bool> writeRawToCharacteristic(String data) async {
+    if (state.connectedDevice == null) {
+      state = state.copyWith(errorMessage: "No device connected");
       return false;
+    }
+    return _performWrite(data);
+  }
+
+  Future<bool> _performWrite(String data) async {
+    if (_cmdCharacteristic == null) {
+      state = state.copyWith(errorMessage: "Characteristic not found");
+      return false;
+    }
+    try {
+      if (_cmdCharacteristic!.properties.write) {
+        await _cmdCharacteristic!.write(data.codeUnits);
+        final ts = _timestamp();
+        final updated = [...state.serialLog, "$ts TX: $data"];
+        updated.removeRange(0, max(0, updated.length - 500));
+        state = state.copyWith(clearError: true, serialLog: updated);
+        return true;
+      } else {
+        logger.w(
+          "Characteristic ${_cmdCharacteristic!.properties.write} $data is not writable",
+        );
+        state = state.copyWith(errorMessage: "Characteristic is not writable");
+        return false;
+      }
     } catch (e) {
-      state = state.copyWith(
-        errorMessage: "Write error: ${e.toString()}",
-        isBusy: false,
-      );
+      state = state.copyWith(errorMessage: "Write error: ${e.toString()}");
       return false;
     }
   }
@@ -322,33 +383,20 @@ class BleNotifier extends Notifier<BleState> {
     }
 
     try {
-      List<BluetoothService> services = await state.connectedDevice!
-          .discoverServices();
-
-      for (var service in services) {
-        if (service.uuid == serviceUuid) {
-          for (var characteristic in service.characteristics) {
-            if (characteristic.uuid == charUuid) {
-              if (characteristic.properties.read) {
-                List<int> value = await characteristic.read();
-                String result = String.fromCharCodes(value);
-                state = state.copyWith(
-                  characteristicValue: result,
-                  clearError: true,
-                );
-                return result;
-              } else {
-                state = state.copyWith(
-                  errorMessage: "Characteristic is not readable",
-                );
-                return null;
-              }
-            }
-          }
-        }
+      if (_cmdCharacteristic == null) {
+        state = state.copyWith(errorMessage: "Characteristic not found");
+        return null;
       }
-      state = state.copyWith(errorMessage: "Characteristic not found");
-      return null;
+
+      if (_cmdCharacteristic!.properties.read) {
+        List<int> value = await _cmdCharacteristic!.read();
+        String result = String.fromCharCodes(value);
+        state = state.copyWith(characteristicValue: result, clearError: true);
+        return result;
+      } else {
+        state = state.copyWith(errorMessage: "Characteristic is not readable");
+        return null;
+      }
     } catch (e) {
       logger.e('Error reading from characteristic', error: e);
       state = state.copyWith(errorMessage: "Read error: ${e.toString()}");
@@ -400,17 +448,20 @@ final bleProvider = NotifierProvider<BleNotifier, BleState>(() {
 
 // Stream provider for scan results
 final scanResultsProvider = StreamProvider<List<ScanResult>>((ref) {
-  return FlutterBluePlus.scanResults.map(
-    (results) =>
-        results.where((r) => r.device.platformName.isNotEmpty).toList(),
-  );
+  return FlutterBluePlus.scanResults
+      .handleError((Object error) {
+        // Scan stream errors (e.g. SCAN_FAILED_ALREADY_STARTED left over from a
+        // previous app session) are recovered by the scan screen. Swallow them
+        // here so this provider stays alive instead of entering an error state.
+      })
+      .map(
+        (results) =>
+            results.where((r) => r.device.platformName.isNotEmpty).toList(),
+      );
 });
 
-/// A provider that automatically parses the raw BLE string into a MachineData object.
+/// A provider that returns the merged MachineData from BLE state.
 final machineDataProvider = Provider<MachineData>((ref) {
-  // Watch the raw BLE state
   final bleState = ref.watch(bleProvider);
-
-  // Return the parsed model
-  return MachineData.fromPacket(bleState.characteristicValue);
+  return bleState.machineData;
 });
