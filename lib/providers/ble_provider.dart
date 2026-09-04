@@ -261,6 +261,23 @@ class BleNotifier extends Notifier<BleState> {
                     if (decoded.contains('TRANSITION:False')) {
                       state = state.copyWith(isBusy: false);
                     }
+
+                    // ---- Phase 2 instrumentation: timestamp transition edges ----
+                    // Lets us measure the real client-visible latency:
+                    //   command sent  ->  TRANSITION=True received  ->  TRANSITION=False received
+                    if (decoded.contains('TRANSITION:True') ||
+                        decoded.contains('TRANSITION:False')) {
+                      final ts = _timestamp();
+                      final label = decoded.contains('TRANSITION:True')
+                          ? 'TRANSITION=True'
+                          : 'TRANSITION=False';
+                      final updated = [
+                        ...state.serialLog,
+                        "$ts RCV $label [$decoded]",
+                      ];
+                      updated.removeRange(0, max(0, updated.length - 500));
+                      state = state.copyWith(serialLog: updated);
+                    }
                   },
                   onError: (error) {
                     logger.e("Telemetry stream error: $error");

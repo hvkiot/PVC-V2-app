@@ -4,6 +4,7 @@ import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/utils/machine_utils.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/app_text_card.dart';
 
@@ -16,6 +17,39 @@ class ConfigScreen extends ConsumerStatefulWidget {
 
 class _ConfigScreenState extends ConsumerState<ConfigScreen> {
   bool _isSynchronizing = false;
+
+  // TRANSITION=True arrives on the first BLE notify tick after the firmware
+  // calls setTransition(true), so the ack wait is near-immediate.
+  static const Duration ackTimeout = Duration(seconds: 3);
+  // TRANSITION=True -> False completion backstop for parameter/current writes
+  // (AINA/AINB + SAVE + 1.5s EEPROM ~= 3s). The 50ms poll exits the instant
+  // False arrives; this bound only guards stale hardware.
+  static const Duration doneTimeout = Duration(seconds: 4);
+
+  /// Same transition wait used by inputs_screen — see that file for the flow.
+  Future<bool> _waitForTransition() async {
+    final ackStart = DateTime.now();
+    bool seenTrue = false;
+    while (DateTime.now().difference(ackStart) < ackTimeout) {
+      if (ref.read(machineDataProvider).transition) {
+        seenTrue = true;
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (seenTrue) return _waitForDone();
+    if (!ref.read(machineDataProvider).transition) return true;
+    return _waitForDone();
+  }
+
+  Future<bool> _waitForDone() async {
+    final start = DateTime.now();
+    while (DateTime.now().difference(start) < doneTimeout) {
+      if (!ref.read(machineDataProvider).transition) return true;
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    return false;
+  }
 
   void _saveConfig() async {
     final machineData = ref.read(machineDataProvider);
@@ -92,11 +126,13 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
         allSuccess = false;
         break;
       }
-      // Wait for hardware to finish before next command
-      final deadline = DateTime.now().add(const Duration(seconds: 10));
-      while (DateTime.now().isBefore(deadline)) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        if (!ref.read(machineDataProvider).transition) break;
+      // Wait for the TRANSITION=True -> False cycle before the next command
+      // (keep one-command-at-a-time until Phase 3 proves batching is safe).
+      final completed = await _waitForTransition();
+      if (!completed) {
+        allSuccess = false;
+        bleNotifier.setBusy(false);
+        break;
       }
     }
 
@@ -127,7 +163,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
     final theme = Theme.of(context);
 
     final String mode = machineData.func;
-    final bool isPin15Active = machineData.pin15;
+    final bool isPinActive = machineData.pin15 || machineData.pin6;
     final bool isBusy = ref.watch(bleProvider).isBusy;
 
     // 2. BULLETPROOF DISPLAY RESOLUTION
@@ -175,7 +211,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                             letterSpacing: 1.1,
                           ),
                         ),
-                        if (isPin15Active) ...[
+                        if (isPinActive) ...[
                           const SizedBox(width: 10),
                           Text(
                             '(LOCKED)',
@@ -189,11 +225,11 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                     ),
                   ),
                 ),
-                if (isPin15Active)
+                if (isPinActive)
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                     child: Text(
-                      "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
+                      "Device is currently enabled. Disable ${activePinsLabel(machineData.pin15, machineData.pin6)} to modify EEPROM settings",
                       textAlign: TextAlign.center,
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: theme.colorScheme.error,
@@ -212,7 +248,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                       }
                     },
                     icon: Icons.settings_input_component,
-                    enabled: !isPin15Active && !isBusy,
+                    enabled: !isPinActive && !isBusy,
                   ),
                 ] else ...[
                   AppTextCard(
@@ -224,7 +260,7 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                       }
                     },
                     icon: Icons.settings_input_component,
-                    enabled: !isPin15Active && !isBusy,
+                    enabled: !isPinActive && !isBusy,
                   ),
                   Divider(
                     color: theme.colorScheme.onSurface.withAlpha(25),
@@ -239,16 +275,13 @@ class _ConfigScreenState extends ConsumerState<ConfigScreen> {
                       }
                     },
                     icon: Icons.settings_input_component,
-                    enabled: !isPin15Active && !isBusy,
+                    enabled: !isPinActive && !isBusy,
                   ),
                 ],
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed:
-                      (isDirty &&
-                          !isPin15Active &&
-                          !isBusy &&
-                          !_isSynchronizing)
+                      (isDirty && !isPinActive && !isBusy && !_isSynchronizing)
                       ? _saveConfig
                       : null,
                   child: Text(
