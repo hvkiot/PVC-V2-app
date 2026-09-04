@@ -58,18 +58,21 @@ Conventions: buttons full-width h=54 r=12 bold+letterSpacing 1.1 (shared `inheri
 
 - GATT UUIDs are hardcoded in `ble_provider.dart`: service `12345678-1234-5678-1234-56789abcdef0`, write/notify char `...f1`, log service/char `...f2`/`...f3`.
 - **Only the new kit is supported** (old/separate-command protocol was removed). Commands are sent as a single combined string: `"FUNC:UNIT"` (e.g. `196:V`), or bare `"Voltage"`/`"Current"` to switch unit. The kit acknowledges by flipping `TRANSITION:True`, back to `False` when done.
+- **Function-change D| packets are coalesced:** `handleChangeMode` synchronously re-reads CURRENT setpoints after the PAM reboot and stores them atomically with FUNC/MODE in one critical section. The app receives a single `D|FUNC:196,MODE:V,CURRENT_A:1000,CURRENT_B:1000` (196) or `D|FUNC:195,MODE:C,CURRENT_S:1000` (195) packet, followed by `D|TRANSITION:False` ~500ms later. Only the current fields relevant to the target mode appear (196 → A+B, 195 → S); inactive fields are excluded.
+- **`PAM_CONNECTED:True/False`** is emitted in delta packets when the PAM USB connection state changes (connect/disconnect).
 - Busy lock: `writeToCharacteristic()` silently drops writes while `isBusy` (cleared on `TRANSITION:False`, write error, or an 8 s guard timer). `writeRawToCharacteristic()` bypasses the busy gate and is reserved for the `SYNC` command, which is sent over the notify channel right after subscription so it is never dropped.
+- Transition clear: firmware uses a non-blocking `transitionClearMillis` deadline (set to `millis() + 500` at handler exit). The loop() block emits `D|TRANSITION:False` when the deadline elapses — not inline in the handler. The app should treat any `TRANSITION:False` as the done signal.
 - Save flow in `inputs_screen.dart` (new-protocol only): sends the combined command, waits up to 3 s for the TRANSITION ack, then waits up to 10 s for TRANSITION to clear (hardware done). No old-protocol fallback.
 - `requestSync()` asks the kit for a fresh `F|` full snapshot at the moment the notify channel is confirmed open.
 
 ### L/D/F telemetry protocol (ESP32→Flutter)
 
 - ESP32 sends three packet formats over the notification characteristic:
-  - `L|key:value|key:value|...` — Live update (~75 bytes, ~750ms interval). Contains WA/WB/IA/IB/READY/PIN15/PIN6 and currently active fields.
-  - `D|key:value|key:value|...` — Delta: only dirty fields since last L| or D| packet. Requires累积 state from previous packets.
+  - `L|key:value|key:value|...` — Live update (~75 bytes, ~200ms interval). Contains WA/WB/IA/IB/READY/PIN15/PIN6 and currently active fields.
+  - `D|key:value|key:value|...` — Delta: only dirty fields since last L| or D| packet. Requires累积 state from previous packets. For function changes, FUNC/MODE and the relevant CURRENT fields (A+B for 196, S for 195) are coalesced into a single D| packet.
   - `F|key:value|key:value|...` — Full snapshot: all 17 fields. Sent on mode change or periodically to resync.
 - `MachineData.mergeFromPacket(packet, currentState)` in `lib/models/machine_data.dart` handles all three formats. It accumulates state across packets: L| and D| merge into existing state, F| replaces state entirely.
-- `_parseKeyValue()` supports dual key naming: abbreviated JSON keys (`CURRENT_A`, `ENABLE_B`, `TRANSITION`) AND long-form ESP32 legacy keys (`CURRENT_A_STATUS`, `ENABLED_B`, `ADAPTER_VOLTAGE`, `FIRMWARE_VERSION`, `PAM_CONNECTED`, `ADAPTER_CURRENT`).
+- `_parseKeyValue()` supports dual key naming: abbreviated JSON keys (`CURRENT_A`, `ENABLE_B`, `TRANSITION`, `PAM_CONNECTED`) AND long-form ESP32 legacy keys (`CURRENT_A_STATUS`, `ENABLED_B`, `ADAPTER_VOLTAGE`, `FIRMWARE_VERSION`, `ADAPTER_CURRENT`).
 - `BleState.machineData` holds the accumulated `MachineData` — the single authoritative source. `machineDataProvider` returns `bleState.machineData` directly (no re-parsing from raw string).
 - The old `MachineData.fromPacket()` legacy parser is preserved for backwards compatibility; `mergeFromPacket()` delegates to it for packets without an L/D/F prefix.
 
