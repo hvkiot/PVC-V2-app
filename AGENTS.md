@@ -57,19 +57,22 @@ Conventions: buttons full-width h=54 r=12 bold+letterSpacing 1.1 (shared `inheri
 ## BLE protocol (single new kit + L/D/F telemetry)
 
 - GATT UUIDs are hardcoded in `ble_provider.dart`: service `12345678-1234-5678-1234-56789abcdef0`, write/notify char `...f1`, log service/char `...f2`/`...f3`.
-- **Only the new kit is supported** (old/separate-command protocol was removed). Commands are sent as a single combined string: `"FUNC:UNIT"` (e.g. `196:V`), or bare `"Voltage"`/`"Current"` to switch unit. The kit acknowledges by flipping `TRANSITION:True`, back to `False` when done.
+- **Only the new kit is supported** (old/separate-command protocol was removed). Mode changes send one atomic string `"FUNC:UNIT[:CA:VAL][:CB:VAL][:CS:VAL]"` (e.g. `196:V:CA:1200:CB:1300` or `195:C:CS:1500`); CA/CB/CS are omitted when 1000 mA. Standalone AIN type uses bare `"Voltage"`/`"Current"` and standalone currents use `CUR`/`CURA`/`CURB`. The kit acknowledges by flipping `TRANSITION:True`, back to `False` when done.
+- **Function-change D| packets are coalesced:** `handleChangeMode` synchronously re-reads CURRENT setpoints after the PAM reboot and stores them atomically with FUNC/MODE in one critical section. The app receives a single `D|FUNC:196,MODE:V,CURRENT_A:1000,CURRENT_B:1000` (196) or `D|FUNC:195,MODE:C,CURRENT_S:1000` (195) packet, followed by `D|TRANSITION:False` ~500ms later. Only the current fields relevant to the target mode appear (196 → A+B, 195 → S); inactive fields are excluded.
+- **`PAM_CONNECTED:True/False`** is emitted in delta packets when the PAM USB connection state changes (connect/disconnect).
 - Busy lock: `writeToCharacteristic()` silently drops writes while `isBusy` (cleared on `TRANSITION:False`, write error, or an 8 s guard timer). `writeRawToCharacteristic()` bypasses the busy gate and is reserved for the `SYNC` command, which is sent over the notify channel right after subscription so it is never dropped.
-- Save flow in `inputs_screen.dart` (new-protocol only): sends the combined command, waits up to 3 s for the TRANSITION ack, then waits up to 10 s for TRANSITION to clear (hardware done). No old-protocol fallback.
+- Transition clear: firmware uses a non-blocking `transitionClearMillis` deadline (set to `millis() + 500` at handler exit). The loop() block emits `D|TRANSITION:False` when the deadline elapses — not inline in the handler. The app should treat any `TRANSITION:False` as the done signal.
+- Save flow in `inputs_screen.dart` and `std_screen.dart` (new-protocol only): sends the combined/atomic command, waits up to 3 s for the TRANSITION ack, then waits up to 10 s for TRANSITION to clear (hardware done, 4 s for param-only). No old-protocol fallback.
 - `requestSync()` asks the kit for a fresh `F|` full snapshot at the moment the notify channel is confirmed open.
 
 ### L/D/F telemetry protocol (ESP32→Flutter)
 
 - ESP32 sends three packet formats over the notification characteristic:
-  - `L|key:value|key:value|...` — Live update (~75 bytes, ~750ms interval). Contains WA/WB/IA/IB/READY/PIN15/PIN6 and currently active fields.
-  - `D|key:value|key:value|...` — Delta: only dirty fields since last L| or D| packet. Requires累积 state from previous packets.
+  - `L|key:value|key:value|...` — Live update (~75 bytes, ~200ms interval). Contains WA/WB/IA/IB/READY/PIN15/PIN6 and currently active fields.
+  - `D|key:value|key:value|...` — Delta: only dirty fields since last L| or D| packet. Requires累积 state from previous packets. For function changes, FUNC/MODE and the relevant CURRENT fields (A+B for 196, S for 195) are coalesced into a single D| packet.
   - `F|key:value|key:value|...` — Full snapshot: all 17 fields. Sent on mode change or periodically to resync.
 - `MachineData.mergeFromPacket(packet, currentState)` in `lib/models/machine_data.dart` handles all three formats. It accumulates state across packets: L| and D| merge into existing state, F| replaces state entirely.
-- `_parseKeyValue()` supports dual key naming: abbreviated JSON keys (`CURRENT_A`, `ENABLE_B`, `TRANSITION`) AND long-form ESP32 legacy keys (`CURRENT_A_STATUS`, `ENABLED_B`, `ADAPTER_VOLTAGE`, `FIRMWARE_VERSION`, `PAM_CONNECTED`, `ADAPTER_CURRENT`).
+- `_parseKeyValue()` supports dual key naming: abbreviated JSON keys (`CURRENT_A`, `ENABLE_B`, `TRANSITION`, `PAM_CONNECTED`) AND long-form ESP32 legacy keys (`CURRENT_A_STATUS`, `ENABLED_B`, `ADAPTER_VOLTAGE`, `FIRMWARE_VERSION`, `ADAPTER_CURRENT`).
 - `BleState.machineData` holds the accumulated `MachineData` — the single authoritative source. `machineDataProvider` returns `bleState.machineData` directly (no re-parsing from raw string).
 - The old `MachineData.fromPacket()` legacy parser is preserved for backwards compatibility; `mergeFromPacket()` delegates to it for packets without an L/D/F prefix.
 
@@ -93,6 +96,14 @@ Conventions: buttons full-width h=54 r=12 bold+letterSpacing 1.1 (shared `inheri
 - Each sub-widget watches only the specific `MachineData` fields it needs (e.g., `select((s) => s.machineData.pin15)`, `select((s) => s.machineData.ready)`).
 - This prevents the entire screen from rebuilding when any single field changes.
 - Sub-widgets: `PamHeader`, `PinStatusSection`, `PamDetailsCard`, `ReadyStatusRow`, `OutputStatusRow`, `ConnectionStatusRow`, `BusyStatusRow`, `ErrorStatusRow`, `PamDetailsSection`, `RawDataExpansion`, `PamDataActions`.
+
+## STD Screen — unified 195/196 (lib/screens/navigate_screens/std_screen.dart)
+
+- Single screen for both FUNCTION 195 (single coil) and 196 (dual coil); mode selector + AINA + current(s) + Save.
+- Save builds atomic command `MODE:UNIT[:CA:VAL][:CB:VAL][:CS:VAL]` on mode change (one PAM transition) — CA/CB/CS omitted when 1000 mA default. Standalone edits use `CUR`/`CURA`/`CURB` and bare `V`/`C` for AIN type.
+- Busy guard: `writeToCharacteristic(busyTimeout: doneTimeoutFunctionChange=10s)` for mode changes, 4s for param changes; wait loop polls `TRANSITION` at 10ms (3s ack + 10s/4s done).
+- Draft reset: `inputsTabProvider.selectedMode` and `machineData.func` listeners reset currents to 1000 defaults on mode switch.
+- UI layout: `GridView.count` (1 col <600px, 2 cols >=600px) of cards — Mode banner (primary bg) + AINA card(s) + Coil current card(s); pill Save button with spinner; `ResponsiveWrapper(maxWidth:600)`; Dividers `onSurface.withAlpha(48)`.
 
 ## App usage model
 

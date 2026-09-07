@@ -261,6 +261,23 @@ class BleNotifier extends Notifier<BleState> {
                     if (decoded.contains('TRANSITION:False')) {
                       state = state.copyWith(isBusy: false);
                     }
+
+                    // ---- Phase 2 instrumentation: timestamp transition edges ----
+                    // Lets us measure the real client-visible latency:
+                    //   command sent  ->  TRANSITION=True received  ->  TRANSITION=False received
+                    if (decoded.contains('TRANSITION:True') ||
+                        decoded.contains('TRANSITION:False')) {
+                      final ts = _timestamp();
+                      final label = decoded.contains('TRANSITION:True')
+                          ? 'TRANSITION=True'
+                          : 'TRANSITION=False';
+                      final updated = [
+                        ...state.serialLog,
+                        "$ts RCV $label [$decoded]",
+                      ];
+                      updated.removeRange(0, max(0, updated.length - 500));
+                      state = state.copyWith(serialLog: updated);
+                    }
                   },
                   onError: (error) {
                     logger.e("Telemetry stream error: $error");
@@ -319,7 +336,10 @@ class BleNotifier extends Notifier<BleState> {
     }
   }
 
-  Future<bool> writeToCharacteristic(String data) async {
+  Future<bool> writeToCharacteristic(
+    String data, {
+    Duration busyTimeout = const Duration(seconds: 8),
+  }) async {
     if (state.connectedDevice == null) {
       state = state.copyWith(errorMessage: "No device connected");
       return false;
@@ -330,7 +350,7 @@ class BleNotifier extends Notifier<BleState> {
       return false;
     }
 
-    setBusy(true);
+    setBusy(true, timeout: busyTimeout);
 
     bool ok = await _performWrite(data);
     if (!ok) {
@@ -421,11 +441,14 @@ class BleNotifier extends Notifier<BleState> {
 
   // Clear error message
   // Set/clear the optimistic transition lock
-  void setBusy(bool value) {
+  void setBusy(bool value, {Duration? timeout}) {
     state = state.copyWith(isBusy: value);
     if (value) {
-      // Safety timeout: auto-clear after 8s if hardware never responds
-      Timer(const Duration(seconds: 8), () {
+      // Safety timeout: auto-clear if hardware never responds. Default 8s;
+      // mode changes (FUNCTION reboot) can take up to 10s, so callers pass a
+      // longer timeout to avoid a spurious unlock while the PAM is still busy.
+      final effective = timeout ?? const Duration(seconds: 8);
+      Timer(effective, () {
         if (state.isBusy) {
           logger.w("⚠️ Busy guard timed out — forcing unlock");
           state = state.copyWith(isBusy: false);
