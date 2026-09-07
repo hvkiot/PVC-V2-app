@@ -231,7 +231,11 @@ class _InputScreenState extends ConsumerState<InputScreen> {
       command = unit; // e.g., "Voltage"
     }
 
-    bool writeOk = await bleNotifier.writeToCharacteristic(command);
+    bool writeOk = await bleNotifier.writeToCharacteristic(
+      command,
+      busyTimeout:
+          modeChanged ? doneTimeoutFunctionChange : doneTimeoutParameterChange,
+    );
     if (!writeOk) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);

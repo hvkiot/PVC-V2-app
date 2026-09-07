@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,10 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/providers/theme_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
-import 'package:pvc_v2/screens/navigate_screens/config_screen.dart';
-import 'package:pvc_v2/screens/navigate_screens/inputs_screen.dart';
+import 'package:pvc_v2/screens/navigate_screens/advanced_config_screen.dart';
 import 'package:pvc_v2/screens/navigate_screens/pam_data_screen.dart';
+import 'package:pvc_v2/screens/navigate_screens/std_screen.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
 import 'package:pvc_v2/widgets/custom_drawer.dart';
@@ -63,8 +65,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   late final List<Widget> _children = [
     PamDataScreen(device: device),
-    InputScreen(),
-    ConfigScreen(),
+    const STDScreen(),
+    AdvancedConfigScreen(),
   ];
 
   final List<BottomNavigationBarItem> _bottomNavigationBarItems = [
@@ -72,8 +74,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       icon: const Icon(Icons.home_outlined),
       label: 'Home',
     ),
-    BottomNavigationBarItem(icon: const Icon(Icons.input), label: 'Inputs'),
-    BottomNavigationBarItem(icon: const Icon(Icons.settings), label: 'Config'),
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.settings),
+      label: 'Basic Config',
+    ),
+    BottomNavigationBarItem(
+      icon: const Icon(Icons.settings_backup_restore_rounded),
+      label: 'Advanced Config',
+    ),
   ];
 
   String title() {
@@ -81,9 +89,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case 0:
         return 'HOME';
       case 1:
-        return 'INPUTS';
+        return 'BASIC CONFIG';
       case 2:
-        return 'CONFIG';
+        return 'ADVANCED CONFIG';
       default:
         return 'HOME';
     }
@@ -181,6 +189,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 : Container(),
           ),
           actions: [
+            if (kDebugMode) ...[
+              IconButton(
+                icon: Icon(
+                  ref.watch(themeProvider) == ThemeMode.light
+                      ? Icons.light_mode
+                      : Icons.dark_mode,
+                  size: 36,
+                ),
+                onPressed: () {
+                  ref.read(themeProvider.notifier).toggleTheme();
+                },
+              ),
+            ],
             IconButton(
               icon: const Icon(Icons.menu, size: 36),
               onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
