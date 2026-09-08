@@ -1268,29 +1268,6 @@ class _Param13DitherFreq extends StatelessWidget {
 }
 
 class _Param14PWM extends StatelessWidget {
-  static const List<int> _pwmSteps = [
-    61,
-    72,
-    85,
-    100,
-    120,
-    150,
-    200,
-    269,
-    372,
-    488,
-    624,
-    781,
-    976,
-    1201,
-    1420,
-    1562,
-    1736,
-    1953,
-    2232,
-    2604,
-  ];
-
   final AdvancedConfigState state;
   final AdvancedConfigNotifier notifier;
   final bool isLocked;
@@ -1302,19 +1279,6 @@ class _Param14PWM extends StatelessWidget {
     required this.isLocked,
     required this.mode,
   });
-
-  int _snapToStep(int value) {
-    int best = _pwmSteps.first;
-    int bestDiff = (value - best).abs();
-    for (final step in _pwmSteps) {
-      final diff = (value - step).abs();
-      if (diff < bestDiff) {
-        best = step;
-        bestDiff = diff;
-      }
-    }
-    return best;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1335,26 +1299,20 @@ class _Param14PWM extends StatelessWidget {
           _PWMField(
             label: 'Channel A',
             value: state.pwmA,
-            onChanged: isLocked
-                ? (_) {}
-                : (v) => notifier.setPwmA(_snapToStep(v)),
+            onChanged: isLocked ? (_) {} : notifier.setPwmA,
             enabled: !isLocked,
           ),
           _PWMField(
             label: 'Channel B',
             value: state.pwmB,
-            onChanged: isLocked
-                ? (_) {}
-                : (v) => notifier.setPwmB(_snapToStep(v)),
+            onChanged: isLocked ? (_) {} : notifier.setPwmB,
             enabled: !isLocked,
           ),
         ] else
           _PWMField(
             label: 'Global carrier',
             value: state.pwmGlobal,
-            onChanged: isLocked
-                ? (_) {}
-                : (v) => notifier.setPwmGlobal(_snapToStep(v)),
+            onChanged: isLocked ? (_) {} : notifier.setPwmGlobal,
             enabled: !isLocked,
           ),
         // ACC toggle
@@ -1378,31 +1336,59 @@ class _Param14PWM extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Manual PI gains  Kp / Ki',
+                    'Manual PI gains  PPWM / IPWM',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  AINConstantRow(
-                    label: 'Kp',
-                    value: 320,
-                    onChanged: (_) {},
-                    enabled: false,
-                  ),
-                  AINConstantRow(
-                    label: 'Ki',
-                    value: 45,
-                    onChanged: (_) {},
-                    enabled: false,
-                  ),
+                  if (mode == '196') ...[
+                    AINConstantRow(
+                      label: 'PPWM:A',
+                      value: state.ppwmA,
+                      onChanged: (v) => notifier.setPpwmA(v),
+                      enabled: !isLocked,
+                    ),
+                    AINConstantRow(
+                      label: 'IPWM:A',
+                      value: state.ipwmA,
+                      onChanged: (v) => notifier.setIpwmA(v),
+                      enabled: !isLocked,
+                    ),
+                    const SizedBox(height: 8),
+                    AINConstantRow(
+                      label: 'PPWM:B',
+                      value: state.ppwmB,
+                      onChanged: (v) => notifier.setPpwmB(v),
+                      enabled: !isLocked,
+                    ),
+                    AINConstantRow(
+                      label: 'IPWM:B',
+                      value: state.ipwmB,
+                      onChanged: (v) => notifier.setIpwmB(v),
+                      enabled: !isLocked,
+                    ),
+                  ] else ...[
+                    AINConstantRow(
+                      label: 'PPWM',
+                      value: state.ppwmGlobal,
+                      onChanged: (v) => notifier.setPpwmGlobal(v),
+                      enabled: !isLocked,
+                    ),
+                    AINConstantRow(
+                      label: 'IPWM',
+                      value: state.ipwmGlobal,
+                      onChanged: (v) => notifier.setIpwmGlobal(v),
+                      enabled: !isLocked,
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
         ],
         Text(
-          '\u2212/\u00A0+ step through the 20 discrete firmware frequencies; typed values snap to the nearest valid step.',
+          'Select from 20 discrete firmware frequencies \u00B7 default 2604 Hz.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
             height: 1.5,
@@ -1426,18 +1412,105 @@ class _PWMField extends StatelessWidget {
     required this.enabled,
   });
 
+  static const List<int> _pwmSteps = [
+    61,
+    72,
+    85,
+    100,
+    120,
+    150,
+    200,
+    269,
+    372,
+    488,
+    624,
+    781,
+    976,
+    1201,
+    1420,
+    1562,
+    1736,
+    1953,
+    2232,
+    2604,
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return NumericStepperCard(
-      title: label,
-      command: 'PWM',
-      value: value,
-      min: 61,
-      max: 2604,
-      step: 1,
-      unit: 'Hz',
-      onChanged: onChanged,
-      enabled: enabled,
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$label  PWM',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Hz',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: enabled
+                      ? theme.colorScheme.primary
+                      : theme.disabledColor.withAlpha(80),
+                  width: 1.5,
+                ),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  isDense: true,
+                  value: value,
+                  isExpanded: true,
+                  icon: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 20,
+                    color: enabled
+                        ? theme.colorScheme.primary
+                        : theme.disabledColor,
+                  ),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  items: _pwmSteps.map((hz) {
+                    return DropdownMenuItem(value: hz, child: Text('$hz Hz'));
+                  }).toList(),
+                  onChanged: enabled
+                      ? (v) { if (v != null) onChanged(v); }
+                      : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

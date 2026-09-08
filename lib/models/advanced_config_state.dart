@@ -84,6 +84,12 @@ class AdvancedConfigState {
   final int pwmGlobal;
   final int pwmA;
   final int pwmB;
+  final int ppwmGlobal;
+  final int ppwmA;
+  final int ppwmB;
+  final int ipwmGlobal;
+  final int ipwmA;
+  final int ipwmB;
   final int currentGlobal;
   final int currentA;
   final int currentB;
@@ -128,6 +134,12 @@ class AdvancedConfigState {
     this.pwmGlobal = 2604,
     this.pwmA = 2604,
     this.pwmB = 2604,
+    this.ppwmGlobal = 7,
+    this.ppwmA = 7,
+    this.ppwmB = 7,
+    this.ipwmGlobal = 40,
+    this.ipwmA = 40,
+    this.ipwmB = 40,
     this.currentGlobal = 1000,
     this.currentA = 1000,
     this.currentB = 1000,
@@ -173,6 +185,12 @@ class AdvancedConfigState {
     int? pwmGlobal,
     int? pwmA,
     int? pwmB,
+    int? ppwmGlobal,
+    int? ppwmA,
+    int? ppwmB,
+    int? ipwmGlobal,
+    int? ipwmA,
+    int? ipwmB,
     int? currentGlobal,
     int? currentA,
     int? currentB,
@@ -217,6 +235,12 @@ class AdvancedConfigState {
       pwmGlobal: pwmGlobal ?? this.pwmGlobal,
       pwmA: pwmA ?? this.pwmA,
       pwmB: pwmB ?? this.pwmB,
+      ppwmGlobal: ppwmGlobal ?? this.ppwmGlobal,
+      ppwmA: ppwmA ?? this.ppwmA,
+      ppwmB: ppwmB ?? this.ppwmB,
+      ipwmGlobal: ipwmGlobal ?? this.ipwmGlobal,
+      ipwmA: ipwmA ?? this.ipwmA,
+      ipwmB: ipwmB ?? this.ipwmB,
       currentGlobal: currentGlobal ?? this.currentGlobal,
       currentA: currentA ?? this.currentA,
       currentB: currentB ?? this.currentB,
@@ -311,6 +335,18 @@ class AdvancedConfigNotifier extends StateNotifier<AdvancedConfigState> {
   void setPwmA(int value) => state = state.copyWith(pwmA: value);
 
   void setPwmB(int value) => state = state.copyWith(pwmB: value);
+
+  void setPpwmGlobal(int value) => state = state.copyWith(ppwmGlobal: value);
+
+  void setPpwmA(int value) => state = state.copyWith(ppwmA: value);
+
+  void setPpwmB(int value) => state = state.copyWith(ppwmB: value);
+
+  void setIpwmGlobal(int value) => state = state.copyWith(ipwmGlobal: value);
+
+  void setIpwmA(int value) => state = state.copyWith(ipwmA: value);
+
+  void setIpwmB(int value) => state = state.copyWith(ipwmB: value);
 
   void setCurrentGlobal(int value) =>
       state = state.copyWith(currentGlobal: value);

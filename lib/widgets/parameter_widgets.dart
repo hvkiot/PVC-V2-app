@@ -45,7 +45,7 @@ class ParamHeader extends StatelessWidget {
           child: Text(
             id,
             style: theme.textTheme.titleSmall?.copyWith(
-              color: Colors.white,
+              color: theme.colorScheme.onPrimary,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -70,26 +70,6 @@ class ParamHeader extends StatelessWidget {
                   ],
                 ],
               ),
-              if (command != null) ...[
-                const SizedBox(height: 2),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    command!,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -259,7 +239,7 @@ class _SegmentedControl extends StatelessWidget {
                   option,
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: isSelected
-                        ? Colors.white
+                        ? theme.colorScheme.onPrimary
                         : (enabled
                               ? theme.colorScheme.onSurfaceVariant
                               : theme.disabledColor),
@@ -327,7 +307,7 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
   @override
   void didUpdateWidget(covariant NumericStepperCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.value != widget.value && !_focus.hasFocus) {
+    if (!_focus.hasFocus) {
       _ctrl.text = widget.value.toString();
     }
     if (oldWidget.enabled != widget.enabled && !widget.enabled) {
@@ -366,7 +346,8 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final showWarning =
-        widget.warningThreshold != null && widget.value > widget.warningThreshold!;
+        widget.warningThreshold != null &&
+        widget.value > widget.warningThreshold!;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -387,8 +368,10 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
                 ),
                 if (widget.unit.isNotEmpty)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(6),
@@ -410,8 +393,12 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
                 _StepperButton(
                   icon: Icons.remove,
                   onPressed: widget.enabled && widget.value > widget.min
-                      ? () => widget
-                          .onChanged((widget.value - widget.step).clamp(widget.min, widget.max))
+                      ? () => widget.onChanged(
+                          (widget.value - widget.step).clamp(
+                            widget.min,
+                            widget.max,
+                          ),
+                        )
                       : null,
                 ),
                 const SizedBox(width: 10),
@@ -423,36 +410,54 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
                       focusNode: _focus,
                       enabled: widget.enabled,
                       textAlign: TextAlign.center,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(signed: false, decimal: false),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        signed: false,
+                        decimal: false,
+                      ),
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9]')),
                       ],
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: widget.enabled ? theme.colorScheme.onSurface : theme.disabledColor,
+                        color: widget.enabled
+                            ? theme.colorScheme.onSurface
+                            : theme.disabledColor,
                       ),
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: widget.enabled
                             ? theme.colorScheme.surface
                             : theme.colorScheme.surfaceContainerHighest,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 14,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                          borderSide: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 1.5,
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                          borderSide: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 1.5,
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+                          borderSide: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 2,
+                          ),
                         ),
                         disabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.disabledColor.withAlpha(80)),
+                          borderSide: BorderSide(
+                            color: theme.disabledColor.withAlpha(80),
+                          ),
                         ),
                       ),
                       onSubmitted: (_) => _commit(),
@@ -464,8 +469,12 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
                 _StepperButton(
                   icon: Icons.add,
                   onPressed: widget.enabled && widget.value < widget.max
-                      ? () => widget
-                          .onChanged((widget.value + widget.step).clamp(widget.min, widget.max))
+                      ? () => widget.onChanged(
+                          (widget.value + widget.step).clamp(
+                            widget.min,
+                            widget.max,
+                          ),
+                        )
                       : null,
                 ),
               ],
@@ -480,12 +489,18 @@ class _NumericStepperCardState extends State<NumericStepperCard> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, size: 16, color: theme.colorScheme.error),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 16,
+                      color: theme.colorScheme.error,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         widget.warningText!,
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.error,
+                        ),
                       ),
                     ),
                   ],
@@ -513,12 +528,18 @@ class _StepperButton extends StatelessWidget {
       width: 44,
       height: 44,
       child: Material(
-        color: enabled ? theme.colorScheme.primaryContainer : theme.disabledColor.withAlpha(30),
+        color: enabled
+            ? theme.colorScheme.primaryContainer
+            : theme.disabledColor.withAlpha(30),
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: onPressed,
-          child: Icon(icon, size: 20, color: enabled ? theme.colorScheme.primary : theme.disabledColor),
+          child: Icon(
+            icon,
+            size: 20,
+            color: enabled ? theme.colorScheme.primary : theme.disabledColor,
+          ),
         ),
       ),
     );
@@ -824,14 +845,17 @@ class _AINConstantRowState extends State<AINConstantRow> {
               widget.label,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: widget.enabled ? theme.colorScheme.onSurface : theme.disabledColor,
+                color: widget.enabled
+                    ? theme.colorScheme.onSurface
+                    : theme.disabledColor,
               ),
             ),
           ),
           _StepperButton(
             icon: Icons.remove,
             onPressed: widget.enabled && widget.value > -10000
-                ? () => widget.onChanged((widget.value - 50).clamp(-10000, 10000))
+                ? () =>
+                      widget.onChanged((widget.value - 50).clamp(-10000, 10000))
                 : null,
           ),
           const SizedBox(width: 8),
@@ -844,26 +868,44 @@ class _AINConstantRowState extends State<AINConstantRow> {
               enabled: widget.enabled,
               textAlign: TextAlign.center,
               keyboardType: const TextInputType.numberWithOptions(signed: true),
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[-0-9]'))],
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[-0-9]')),
+              ],
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: widget.enabled ? theme.colorScheme.onSurface : theme.disabledColor,
+                color: widget.enabled
+                    ? theme.colorScheme.onSurface
+                    : theme.disabledColor,
               ),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: widget.enabled ? theme.colorScheme.surface : theme.colorScheme.surfaceContainerHighest,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                fillColor: widget.enabled
+                    ? theme.colorScheme.surface
+                    : theme.colorScheme.surfaceContainerHighest,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 1.5,
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: theme.colorScheme.outline.withAlpha(100), width: 1.2),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.outline.withAlpha(100),
+                    width: 1.2,
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+                  borderSide: BorderSide(
+                    color: theme.colorScheme.primary,
+                    width: 2,
+                  ),
                 ),
               ),
               onSubmitted: (_) => _commit(),
@@ -874,7 +916,8 @@ class _AINConstantRowState extends State<AINConstantRow> {
           _StepperButton(
             icon: Icons.add,
             onPressed: widget.enabled && widget.value < 10000
-                ? () => widget.onChanged((widget.value + 50).clamp(-10000, 10000))
+                ? () =>
+                      widget.onChanged((widget.value + 50).clamp(-10000, 10000))
                 : null,
           ),
         ],
@@ -962,11 +1005,16 @@ class _RampRowState extends State<RampRow> {
                 Expanded(
                   child: Text(
                     widget.label,
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(6),
@@ -988,7 +1036,9 @@ class _RampRowState extends State<RampRow> {
                 _StepperButton(
                   icon: Icons.remove,
                   onPressed: widget.enabled && widget.value > 1
-                      ? () => widget.onChanged((widget.value - 10).clamp(1, 120000))
+                      ? () => widget.onChanged(
+                          (widget.value - 10).clamp(1, 120000),
+                        )
                       : null,
                 ),
                 const SizedBox(width: 8),
@@ -1004,12 +1054,19 @@ class _RampRowState extends State<RampRow> {
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: widget.enabled ? theme.colorScheme.onSurface : theme.disabledColor,
+                        color: widget.enabled
+                            ? theme.colorScheme.onSurface
+                            : theme.disabledColor,
                       ),
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: widget.enabled ? theme.colorScheme.surface : theme.colorScheme.surfaceContainerHighest,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                        fillColor: widget.enabled
+                            ? theme.colorScheme.surface
+                            : theme.colorScheme.surfaceContainerHighest,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 14,
+                        ),
                         suffixText: 'ms',
                         suffixStyle: theme.textTheme.labelMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -1017,15 +1074,24 @@ class _RampRowState extends State<RampRow> {
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                          borderSide: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 1.5,
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                          borderSide: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 1.5,
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+                          borderSide: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 2,
+                          ),
                         ),
                       ),
                       onSubmitted: (_) => _commit(),
@@ -1037,7 +1103,9 @@ class _RampRowState extends State<RampRow> {
                 _StepperButton(
                   icon: Icons.add,
                   onPressed: widget.enabled && widget.value < 120000
-                      ? () => widget.onChanged((widget.value + 10).clamp(1, 120000))
+                      ? () => widget.onChanged(
+                          (widget.value + 10).clamp(1, 120000),
+                        )
                       : null,
                 ),
               ],
@@ -1048,17 +1116,29 @@ class _RampRowState extends State<RampRow> {
                 const Spacer(),
                 _QuickButton(
                   label: '+50',
-                  onTap: widget.enabled ? () => widget.onChanged((widget.value + 50).clamp(1, 120000)) : null,
+                  onTap: widget.enabled
+                      ? () => widget.onChanged(
+                          (widget.value + 50).clamp(1, 120000),
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 6),
                 _QuickButton(
                   label: '+500',
-                  onTap: widget.enabled ? () => widget.onChanged((widget.value + 500).clamp(1, 120000)) : null,
+                  onTap: widget.enabled
+                      ? () => widget.onChanged(
+                          (widget.value + 500).clamp(1, 120000),
+                        )
+                      : null,
                 ),
                 const SizedBox(width: 6),
                 _QuickButton(
                   label: '+1k',
-                  onTap: widget.enabled ? () => widget.onChanged((widget.value + 1000).clamp(1, 120000)) : null,
+                  onTap: widget.enabled
+                      ? () => widget.onChanged(
+                          (widget.value + 1000).clamp(1, 120000),
+                        )
+                      : null,
                 ),
               ],
             ),
