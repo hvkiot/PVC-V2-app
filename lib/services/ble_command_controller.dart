@@ -14,6 +14,62 @@ import 'package:pvc_v2/utils/coef_normalizer.dart';
 // utils/coef_normalizer.dart (single implementation as of 2026-09; this
 // file used to carry its own private copy of the same logic).
 
+// ═══════════════════════════════════════════════════════════════════════
+// STRUCTURAL SPLIT (Phase 3, 2026-09): this file is the library root for
+// the BleCommandController library — imports, the class's core state/queue
+// members, and `part` directives. The per-parameter write methods live in
+// the `ble_command_controller/` part files below, contributed to the class
+// via mixins. This is a pure code-motion / file re-organization: no
+// command string, parameter ID, timing value, retry/timeout, busy-guard,
+// protocol, or provider behavior changed.
+//
+// Why mixins (not just part/part-of on their own): unlike Phase 2's
+// parameter_widgets.dart, which held many independent top-level widget
+// classes, this file is ONE class (BleCommandController) with ~20 instance
+// methods. Dart has no "partial class" feature — a class's members must
+// all be declared in one contiguous class body, even across part files in
+// the same library. The only mechanical way to move a subset of one
+// class's methods into their own file is a mixin, applied to the class via
+// `with`.
+//
+// Each mixin declares two minimal ABSTRACT members it needs —
+// `Future<bool> execute(...)` and `MachineData get _md` — restating the
+// exact signatures BleCommandController's own class body already
+// implements concretely, and the mixin's own methods call them normally.
+// (An earlier draft of this split tried `mixin X on BleCommandController`
+// so each mixin could reach BleCommandController's members implicitly —
+// that fails to compile: `class BleCommandController with X` while `X`
+// itself extends-constrains on `BleCommandController` is a circular
+// supertype declaration, rejected by the analyzer as
+// recursive_interface_inheritance. The abstract-redeclaration form below
+// is the correct, non-circular version of the same idea.) This is still
+// zero new PUBLIC interface — the abstract redeclarations are private,
+// exist only to satisfy the mixin-composition mechanism, and no member was
+// made public or renamed to allow this split.
+//
+// Each part file's first line is `part of '../ble_command_controller.dart';`.
+// Only this root file holds `import`s; per Dart part-file rules the
+// per-parameter-write files below use `execute()`, `_md`, and (in
+// ain_coefficient_writes.dart) `normalizeCoefType()` directly, without
+// their own imports.
+//
+// Public symbols (unchanged since before the split): BleCommandController
+// (class), bleCommandProvider, and every existing public method —
+// execute, saveToEeprom, executeAndSave, setConfigView, setPamMode,
+// isBusy, ackTimeout/doneTimeoutFunctionChange/doneTimeoutParameterChange,
+// and all 18 parameter-write methods (writeFunction .. writeAcceleration).
+// advanced_config_screen.dart, basic_config_screen.dart, and
+// custom_drawer.dart — the only external consumers — needed zero changes.
+//
+// See AGENTS.md "Phase 3 — BleCommandController structural split
+// (2026-09)" for the full audit and file-grouping rationale.
+// ═══════════════════════════════════════════════════════════════════════
+
+part 'ble_command_controller/simple_parameter_writes.dart';
+part 'ble_command_controller/diffed_parameter_writes.dart';
+part 'ble_command_controller/ain_coefficient_writes.dart';
+part 'ble_command_controller/current_ramp_writes.dart';
+
 /// Shared BLE command controller used by both basic (STD) and advanced screens.
 ///
 /// Handles:
@@ -21,7 +77,34 @@ import 'package:pvc_v2/utils/coef_normalizer.dart';
 ///  * overlay / busy-guard management
 ///  * SAVE (EEPROM persist) helper
 ///  * success / failure messages
-class BleCommandController {
+///
+/// High-level per-parameter write helpers — Advanced Config.
+///
+/// Each method sends ONLY the command(s) for that one parameter group,
+/// via the shared execute() mechanism above (same ACK/transition/busy/
+/// timeout/overlay handling as everything else). None of them call
+/// saveToEeprom() — persistence stays a separate, caller-controlled step.
+///
+/// Wire formats below are NOT invented here: single-value/per-channel
+/// params (SENS/CCMODE/ENABLE_B/TRIGGER/MIN/MAX/LIM/POL/DAMPL/DFREQ/PWM/
+/// ramp) mirror the exact colon syntax commands.cpp's parseBleCommand()
+/// already parses into tracked CMD_SET_PARAM writes (with PAM readback +
+/// gState caching). FUNCTION reuses the existing CMD_CHANGE_MODE legacy
+/// bare-mode path. CURRENT reuses Basic Config's existing CUR/CURA/CURB
+/// format. AIN/PPWM/IPWM/ACC have no tracked firmware support (they fall
+/// through to CMD_FORWARD_RAW) so they keep the exact raw string shape
+/// already used for them previously.
+///
+/// (Phase 3, 2026-09: these write helpers now live in the
+/// `ble_command_controller/` part files, contributed via mixins — see the
+/// file-banner comment above. This doc comment is unchanged from before
+/// the split.)
+class BleCommandController
+    with
+        _SimpleParameterWrites,
+        _DiffedParameterWrites,
+        _AinCoefficientWrites,
+        _CurrentRampWrites {
   BleCommandController(this._ref);
 
   final Ref _ref;
@@ -36,6 +119,7 @@ class BleCommandController {
   StateController<bool> get _overlay =>
       _ref.read(processingOverlayProvider.notifier);
   GlobalMessageNotifier get _msg => _ref.read(globalMessageProvider.notifier);
+  @override
   MachineData get _md => _ref.read(machineDataProvider);
 
   /// Whether the device is currently busy.
@@ -51,6 +135,7 @@ class BleCommandController {
   ///   displayed for the duration of execution.
   /// * [onProgress] – optional callback with the 1-based index of the command
   ///   currently being sent (useful for a progress indicator).
+  @override
   Future<bool> execute(
     List<String> commands, {
     bool isModeChange = false,
@@ -120,367 +205,6 @@ class BleCommandController {
 
     if (showOverlay) _overlay.state = false;
     return writeOk;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // High-level per-parameter write helpers — Advanced Config.
-  //
-  // Each method sends ONLY the command(s) for that one parameter group,
-  // via the shared execute() mechanism above (same ACK/transition/busy/
-  // timeout/overlay handling as everything else). None of them call
-  // saveToEeprom() — persistence stays a separate, caller-controlled step.
-  //
-  // Wire formats below are NOT invented here: single-value/per-channel
-  // params (SENS/CCMODE/ENABLE_B/TRIGGER/MIN/MAX/LIM/POL/DAMPL/DFREQ/PWM/
-  // ramp) mirror the exact colon syntax commands.cpp's parseBleCommand()
-  // already parses into tracked CMD_SET_PARAM writes (with PAM readback +
-  // gState caching). FUNCTION reuses the existing CMD_CHANGE_MODE legacy
-  // bare-mode path. CURRENT reuses Basic Config's existing CUR/CURA/CURB
-  // format. AIN/PPWM/IPWM/ACC have no tracked firmware support (they fall
-  // through to CMD_FORWARD_RAW) so they keep the exact raw string shape
-  // already used for them previously.
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /// Param 01 — Function (mode 195/196).
-  /// Sends the bare mode command only (no unit/current suffix). This is
-  /// the existing legacy CMD_CHANGE_MODE path: the firmware falls back to
-  /// gState.lastAinUnit for the AIN unit and resets currents to PAM
-  /// defaults — exactly what already happens whenever a bare "195"/"196"
-  /// is sent, so Function stays isolated from AIN/CURRENT.
-  Future<bool> writeFunction(String mode) {
-    return execute([mode], isModeChange: true);
-  }
-
-  /// Param 02 — SENS ('ON' | 'OFF' | 'AUTO').
-  Future<bool> writeSens(String value) {
-    return execute(['SENS:$value']);
-  }
-
-  /// Param 03 — CC Mode.
-  Future<bool> writeCcMode(bool value) {
-    return execute(['CCMODE:${value ? "ON" : "OFF"}']);
-  }
-
-  /// Param 04 — Enable-B (mode 196 only).
-  Future<bool> writeEnableB(bool value) {
-    return execute(['ENABLE_B:${value ? "ON" : "OFF"}']);
-  }
-
-  /// Param 05 — LIMIT. Mode 195 uses the single global value; mode 196
-  /// uses the independent A/B values. Only the channel(s) whose draft
-  /// value actually differs from the current MachineData baseline are
-  /// sent: neither changed → no command, one changed → that channel's
-  /// existing single command, both changed → one grouped command.
-  Future<bool> writeLimit({required String mode, int? global, int? a, int? b}) {
-    if (mode == '196') {
-      final aChanged = a != null && a != _md.expConfig.limA;
-      final bChanged = b != null && b != _md.expConfig.limB;
-      if (aChanged && bChanged) {
-        return execute(['LIM:A:$a:B:$b']);
-      } else if (aChanged) {
-        return execute(['LIM_A:$a']);
-      } else if (bChanged) {
-        return execute(['LIM_B:$b']);
-      }
-      return execute(const []);
-    }
-    return execute(['LIM:$global']);
-  }
-
-  /// Param 06 — POL (polarity). Same 195/196 shape and same
-  /// draft-vs-MachineData diffing as LIMIT.
-  Future<bool> writePolarity({
-    required String mode,
-    String? global,
-    String? a,
-    String? b,
-  }) {
-    if (mode == '196') {
-      final aChanged = a != null && a != _md.expConfig.polA;
-      final bChanged = b != null && b != _md.expConfig.polB;
-      if (aChanged && bChanged) {
-        return execute(['POL:A:$a:B:$b']);
-      } else if (aChanged) {
-        return execute(['POL_A:$a']);
-      } else if (bChanged) {
-        return execute(['POL_B:$b']);
-      }
-      return execute(const []);
-    }
-    return execute(['POL:$global']);
-  }
-
-  /// Param 07 — AIN. [channel]/[a]/[b]/[c]/[type] describe channel A (or
-  /// the only channel, in mode 195). Passing the optional [bA]/[bB]/[bC]/
-  /// [bType] values as well produces the grouped mode-196 transaction —
-  /// ONE tracked CMD_SET_PARAM_GROUP command ("AIN196:A:...:B:...") that
-  /// writes+reads back both channels in a single ESP-side transaction.
-  /// Without them, this keeps the exact original single-channel raw
-  /// "AIN:< channel> <a> <b> < c> < type>" CMD_FORWARD_RAW passthrough
-  /// (untracked, fire-and-forget) — unchanged for any existing caller that
-  /// still invokes this per channel.
-  Future<bool> writeAIN({
-    required String channel,
-    required int a,
-    required int b,
-    required int c,
-    required String type,
-    int? bA,
-    int? bB,
-    int? bC,
-    String? bType,
-  }) {
-    if (bA != null && bB != null && bC != null && bType != null) {
-      // Dual-channel call: diff each channel independently against the
-      // MachineData baseline — neither changed → no command, one changed
-      // → that channel's existing single raw command, both changed → one
-      // grouped AIN196 command.
-      //
-      // Type baseline uses ainACoefType/ainBCoefType (Parameter 07's
-      // editable coefficient type), not the live/root AIN type (owned by
-      // MachineData.mode — the old ainAType/ainBType fields were removed
-      // entirely, 2026-09) — [type]/[bType] passed in here already
-      // carry the coefficient type (see advanced_config_screen.dart's
-      // Parameter 07 call site), so they must be diffed against the same.
-      // MachineData keeps the raw PAM token (e.g. "U"/"I"); [type]/[bType]
-      // are always editable V/C — normalize the baseline before comparing.
-      final aChanged =
-          a != _md.expConfig.ainAa ||
-          b != _md.expConfig.ainAb ||
-          c != _md.expConfig.ainAc ||
-          type != normalizeCoefType(_md.expConfig.ainACoefType);
-      final bChanged =
-          bA != _md.expConfig.ainBa ||
-          bB != _md.expConfig.ainBb ||
-          bC != _md.expConfig.ainBc ||
-          bType != normalizeCoefType(_md.expConfig.ainBCoefType);
-      if (aChanged && bChanged) {
-        return execute(['AIN196:A:$a:$b:$c:$type:B:$bA:$bB:$bC:$bType']);
-      } else if (aChanged) {
-        return execute(['AIN:A $a $b $c $type']);
-      } else if (bChanged) {
-        return execute(['AIN:B $bA $bB $bC $bType']);
-      }
-      return execute(const []);
-    }
-    // Single-channel legacy call: no-op if this channel's values already
-    // match the MachineData baseline, otherwise send it alone (unchanged
-    // raw CMD_FORWARD_RAW passthrough).
-    final baseA = channel == 'A' ? _md.expConfig.ainAa : _md.expConfig.ainBa;
-    final baseB = channel == 'A' ? _md.expConfig.ainAb : _md.expConfig.ainBb;
-    final baseC = channel == 'A' ? _md.expConfig.ainAc : _md.expConfig.ainBc;
-    // Coefficient-type baseline (Parameter 07), not the live/root AIN type.
-    // Normalize the raw PAM token (e.g. "U"/"I") to editable V/C before
-    // comparing against [type], which is always V/C.
-    final baseType = channel == 'A'
-        ? normalizeCoefType(_md.expConfig.ainACoefType)
-        : normalizeCoefType(_md.expConfig.ainBCoefType);
-    if (a == baseA && b == baseB && c == baseC && type == baseType) {
-      return execute(const []);
-    }
-    return execute(['AIN:$channel $a $b $c $type']);
-  }
-
-  /// Param 08 — Ramp (accel/decel). Mode 195 uses the raw PAM quadrant
-  /// syntax (AA:1..AA:4); mode 196 uses the per-channel UP/DOWN syntax
-  /// (AA:UP/AA:DOWN for channel A, AB:UP/AB:DOWN for channel B).
-  ///
-  /// Only the quadrant(s) whose draft value differs from the MachineData
-  /// baseline are sent. The ESP grouped RAMP parser only accepts a
-  /// fixed-shape "RAMP:AUP:..:ADOWN:..:BUP:..:BDOWN:.." command with all
-  /// four keys present (see commands.cpp's parseBleCommand()) — it does
-  /// not support a partial/subset grouped form, so that single grouped
-  /// command is only used when all four quadrants changed; otherwise the
-  /// changed quadrants are sent individually via their existing single
-  /// commands (still one execute() call, just a shorter command list).
-  Future<bool> writeRamp({
-    required String mode,
-    required int aUp,
-    required int aDown,
-    required int bUp,
-    required int bDown,
-  }) {
-    final aUpChanged = aUp != _md.expConfig.rampAaUp;
-    final aDownChanged = aDown != _md.expConfig.rampAaDown;
-    final bUpChanged = bUp != _md.expConfig.rampAbUp;
-    final bDownChanged = bDown != _md.expConfig.rampAbDown;
-    final changedCount = [
-      aUpChanged,
-      aDownChanged,
-      bUpChanged,
-      bDownChanged,
-    ].where((c) => c).length;
-
-    if (changedCount == 0) return execute(const []);
-
-    if (mode == '196') {
-      if (changedCount == 4) {
-        return execute(['RAMP:AUP:$aUp:ADOWN:$aDown:BUP:$bUp:BDOWN:$bDown']);
-      }
-      final cmds = <String>[
-        if (aUpChanged) 'AA:UP:$aUp',
-        if (aDownChanged) 'AA:DOWN:$aDown',
-        if (bUpChanged) 'AB:UP:$bUp',
-        if (bDownChanged) 'AB:DOWN:$bDown',
-      ];
-      return execute(cmds);
-    }
-    // Mode 195 uses the distinct quadrant-number PAM addressing (AA:1..4)
-    // — the grouped RAMP command always writes the 196-style AA:UP/DOWN,
-    // AB:UP/DOWN forms on the ESP side, so it is never used here; only the
-    // changed quadrants are sent, via the existing per-quadrant commands.
-    final cmds = <String>[
-      if (aUpChanged) 'AA:1:$aUp',
-      if (aDownChanged) 'AA:2:$aDown',
-      if (bUpChanged) 'AA:3:$bUp',
-      if (bDownChanged) 'AA:4:$bDown',
-    ];
-    return execute(cmds);
-  }
-
-  /// Param 09 — MIN. Always per-channel, in both modes. Neither changed →
-  /// no command, one changed → that channel's existing single command,
-  /// both changed → one grouped CMD_SET_PARAM_GROUP command.
-  Future<bool> writeMin(int a, int b) {
-    final aChanged = a != _md.expConfig.minA;
-    final bChanged = b != _md.expConfig.minB;
-    if (aChanged && bChanged) {
-      return execute(['MIN:A:$a:B:$b']);
-    } else if (aChanged) {
-      return execute(['MIN_A:$a']);
-    } else if (bChanged) {
-      return execute(['MIN_B:$b']);
-    }
-    return execute(const []);
-  }
-
-  /// Param 10 — MAX. Same diffing as MIN.
-  Future<bool> writeMax(int a, int b) {
-    final aChanged = a != _md.expConfig.maxA;
-    final bChanged = b != _md.expConfig.maxB;
-    if (aChanged && bChanged) {
-      return execute(['MAX:A:$a:B:$b']);
-    } else if (aChanged) {
-      return execute(['MAX_A:$a']);
-    } else if (bChanged) {
-      return execute(['MAX_B:$b']);
-    }
-    return execute(const []);
-  }
-
-  /// Param 11 — Trigger.
-  Future<bool> writeTrigger(int value) {
-    return execute(['TRIGGER:$value']);
-  }
-
-  /// Param 12 — Dither Amplitude. Diffed against MachineData like LIMIT.
-  Future<bool> writeDitherAmplitude({
-    required String mode,
-    int? global,
-    int? a,
-    int? b,
-  }) {
-    if (mode == '196') {
-      final aChanged = a != null && a != _md.expConfig.ditherAmpA;
-      final bChanged = b != null && b != _md.expConfig.ditherAmpB;
-      if (aChanged && bChanged) {
-        return execute(['DAMPL:A:$a:B:$b']);
-      } else if (aChanged) {
-        return execute(['DAMPL_A:$a']);
-      } else if (bChanged) {
-        return execute(['DAMPL_B:$b']);
-      }
-      return execute(const []);
-    }
-    return execute(['DAMPL:$global']);
-  }
-
-  /// Param 13 — Dither Frequency. Diffed against MachineData like LIMIT.
-  Future<bool> writeDitherFrequency({
-    required String mode,
-    int? global,
-    int? a,
-    int? b,
-  }) {
-    if (mode == '196') {
-      final aChanged = a != null && a != _md.expConfig.ditherFreqA;
-      final bChanged = b != null && b != _md.expConfig.ditherFreqB;
-      if (aChanged && bChanged) {
-        return execute(['DFREQ:A:$a:B:$b']);
-      } else if (aChanged) {
-        return execute(['DFREQ_A:$a']);
-      } else if (bChanged) {
-        return execute(['DFREQ_B:$b']);
-      }
-      return execute(const []);
-    }
-    return execute(['DFREQ:$global']);
-  }
-
-  /// Param 14 — PWM Frequency. Diffed against MachineData like LIMIT.
-  Future<bool> writePwm({required String mode, int? global, int? a, int? b}) {
-    if (mode == '196') {
-      final aChanged = a != null && a != _md.expConfig.pwmA;
-      final bChanged = b != null && b != _md.expConfig.pwmB;
-      if (aChanged && bChanged) {
-        return execute(['PWM:A:$a:B:$b']);
-      } else if (aChanged) {
-        return execute(['PWM_A:$a']);
-      } else if (bChanged) {
-        return execute(['PWM_B:$b']);
-      }
-      return execute(const []);
-    }
-    return execute(['PWM:$global']);
-  }
-
-  /// Not yet exposed by any Advanced Config parameter card (no '05'-style
-  /// dropdown entry maps to it). Kept for controller-level parity/reuse.
-  /// commands.cpp has no tracked CMD_SET_PARAM entry for PPWM, so this
-  /// keeps the exact raw fire-and-forget shape the old bulk save used.
-  Future<bool> writePpwm({required String mode, int? global, int? a, int? b}) {
-    if (mode == '196') {
-      return execute(['PPWM:A $a', 'PPWM:B $b']);
-    }
-    return execute(['PPWM $global']);
-  }
-
-  /// Same status as [writePpwm] — no dropdown entry selects it yet.
-  Future<bool> writeIpwm({required String mode, int? global, int? a, int? b}) {
-    if (mode == '196') {
-      return execute(['IPWM:A $a', 'IPWM:B $b']);
-    }
-    return execute(['IPWM $global']);
-  }
-
-  /// Param 15 — Current. Reuses Basic Config's existing legacy
-  /// CUR/CURA/CURB format (tracked via CMD_SET_CURRENT on the firmware).
-  Future<bool> writeCurrent({
-    required String mode,
-    int? single,
-    int? a,
-    int? b,
-  }) {
-    if (mode == '196') {
-      final aChanged = a != null && a != _md.coilACurrent.round();
-      final bChanged = b != null && b != _md.coilBCurrent.round();
-      if (aChanged && bChanged) {
-        return execute(['CUR196:A:$a:B:$b']);
-      } else if (aChanged) {
-        return execute(['CURA:$a:196']);
-      } else if (bChanged) {
-        return execute(['CURB:$b:196']);
-      }
-      return execute(const []);
-    }
-    return execute(['CUR:$single:195']);
-  }
-
-  /// Not yet exposed by any Advanced Config parameter card. Kept for
-  /// controller-level parity; raw fire-and-forget, same as the old bulk
-  /// save's 'ACC ON'/'ACC OFF'.
-  Future<bool> writeAcceleration(bool value) {
-    return execute(['ACC ${value ? "ON" : "OFF"}']);
   }
 
   /// App-only preference cache — tells the ESP which config screen (Basic
