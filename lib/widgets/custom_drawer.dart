@@ -15,7 +15,9 @@ class CustomDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final machineData = ref.watch(machineDataProvider);
+    final (pamMode, firmwareVersion) = ref.watch(
+      machineDataProvider.select((d) => (d.pamMode, d.firmwareVersion)),
+    );
 
     return Drawer(
       backgroundColor: colorScheme.surface,
@@ -56,7 +58,7 @@ class CustomDrawer extends ConsumerWidget {
               padding: EdgeInsets.zero,
               children: [
                 _ConfigViewSelector(
-                  pamMode: machineData.pamMode,
+                  pamMode: pamMode,
                   theme: theme,
                   colorScheme: colorScheme,
                 ),
@@ -131,7 +133,7 @@ class CustomDrawer extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text(
-              'PVC Firmware v${machineData.firmwareVersion}',
+              'PVC Firmware v$firmwareVersion',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

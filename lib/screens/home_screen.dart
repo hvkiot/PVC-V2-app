@@ -72,10 +72,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       icon: const Icon(Icons.home_outlined),
       label: 'Home',
     ),
-    BottomNavigationBarItem(
-      icon: const Icon(Icons.settings),
-      label: 'Config',
-    ),
+    BottomNavigationBarItem(icon: const Icon(Icons.settings), label: 'Config'),
   ];
 
   String title() {
@@ -145,11 +142,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // 2. Watch Processing Overlay State
     final isProcessing = ref.watch(processingOverlayProvider);
-    final bleState = ref.watch(bleProvider);
-    final isConnected = bleState.connectedDevice == device;
+    final connectedDevice = ref.watch(
+      bleProvider.select((s) => s.connectedDevice),
+    );
+    final isConnected = connectedDevice == device;
     final theme = Theme.of(context);
-    final pamIsConnected = ref.watch(machineDataProvider).pamConnected;
-    final isBusy = ref.watch(bleProvider).isBusy;
+    final pamIsConnected = ref.watch(
+      machineDataProvider.select((d) => d.pamConnected),
+    );
+    final isBusy = ref.watch(bleProvider.select((s) => s.isBusy));
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -220,8 +221,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildNoPamScreen() {
     final theme = Theme.of(context);
-    final bleState = ref.watch(bleProvider);
-    final isConnecting = bleState.isConnecting;
+    final isConnecting = ref.watch(bleProvider.select((s) => s.isConnecting));
     final device = widget.device;
     final bleNotifier = ref.read(bleProvider.notifier);
 
