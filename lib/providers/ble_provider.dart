@@ -5,6 +5,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import 'package:pvc_v2/models/machine_data.dart';
+import 'package:pvc_v2/utils/pvc_debug_trace.dart';
 
 // State class to hold all BLE-related state
 class BleState {
@@ -83,9 +84,19 @@ class BleNotifier extends Notifier<BleState> {
   StreamSubscription<List<int>>? _telemetrySub;
   StreamSubscription? _logSub;
 
+  // Single outstanding busy-guard safety timer. setBusy() cancels/replaces
+  // this on every call so a stale timer from an earlier operation can never
+  // fire after busy has already been legitimately cleared/reset.
+  Timer? _busyTimer;
+
   // Cached main command characteristic.  It is set after service discovery
   // and cleared on disconnect or before a new connect.
   BluetoothCharacteristic? _cmdCharacteristic;
+
+  // ---- F| chunk reassembly state (temporary debug) ----
+  final List<String> _fChunks = [];
+  int _fExpectedTotal = 0;
+  int _fSnapshotId = 0;
 
   @override
   BleState build() {
@@ -107,7 +118,12 @@ class BleNotifier extends Notifier<BleState> {
     _scanningSub?.cancel();
     _telemetrySub?.cancel();
     _logSub?.cancel();
+    _busyTimer?.cancel();
+    _busyTimer = null;
     _cmdCharacteristic = null;
+    _fChunks.clear();
+    _fExpectedTotal = 0;
+    _fSnapshotId = 0;
     if (state.connectedDevice != null) {
       state.connectedDevice!.disconnect();
     }
@@ -186,6 +202,10 @@ class BleNotifier extends Notifier<BleState> {
       _logSub?.cancel();
       _logSub = null;
       _cmdCharacteristic = null;
+      // Clear F| chunk reassembly state
+      _fChunks.clear();
+      _fExpectedTotal = 0;
+      _fSnapshotId = 0;
 
       await state.connectedDevice!.disconnect();
       state = state.copyWith(
@@ -250,6 +270,98 @@ class BleNotifier extends Notifier<BleState> {
                   (value) {
                     final decoded = utf8.decode(value, allowMalformed: true);
                     logger.d("Received BLE Data: $decoded");
+
+                    // ---- F| chunk reassembly (temporary debug) ----
+                    // Wire format: F|<snapshotId>|<chunkIndex>/<totalChunks>|<payload>
+                    if (decoded.startsWith('F|') && decoded.contains('|', 2)) {
+                      final parts = decoded.split('|');
+                      if (parts.length < 4) {
+                        logger.w(
+                          "[FCHUNK] Malformed F chunk (need 4+ parts): $decoded",
+                        );
+                        return;
+                      }
+                      // parts[0]="F", parts[1]=snapshotId, parts[2]="n/total", parts[3...]=payload
+
+                      final snapId = int.tryParse(parts[1]);
+                      final chunkHeader = parts[2];
+                      final slashIdx = chunkHeader.indexOf('/');
+                      if (slashIdx == -1) {
+                        logger.w(
+                          "[FCHUNK] Missing / in header part '${parts[2]}': $decoded",
+                        );
+                        return;
+                      }
+                      final idx = int.tryParse(
+                        chunkHeader.substring(0, slashIdx),
+                      );
+                      final total = int.tryParse(
+                        chunkHeader.substring(slashIdx + 1),
+                      );
+
+                      if (snapId == null || idx == null || total == null) {
+                        logger.w("[FCHUNK] Bad header values: $decoded");
+                        return;
+                      }
+
+                      // Payload is everything after the 3rd pipe
+                      int payloadStart = 0;
+                      for (int i = 0; i < 3; i++) {
+                        payloadStart = decoded.indexOf('|', payloadStart) + 1;
+                      }
+                      final payload = decoded.substring(payloadStart);
+
+                      // New snapshot started — discard any previous incomplete one
+                      if (_fChunks.isEmpty || snapId != _fSnapshotId) {
+                        _fChunks.clear();
+                        _fSnapshotId = snapId;
+                        _fExpectedTotal = total;
+                        logger.i("[FCHUNK] New snapshot=$snapId total=$total");
+                      }
+
+                      _fChunks.add(payload);
+                      logger.i(
+                        "[FCHUNK] snapshot=$snapId index=$idx/$total "
+                        "chunks=${_fChunks.length}",
+                      );
+
+                      // Check if all chunks received
+                      if (_fChunks.length == _fExpectedTotal) {
+                        final reconstructed = _fChunks.join();
+                        logger.i("[FCHUNK] F snapshot complete: $snapId");
+                        logger.i(
+                          "[FCHUNK] F reconstructed length: ${reconstructed.length}",
+                        );
+                        logger.d(
+                          "[FCHUNK] F reconstructed packet: $reconstructed",
+                        );
+
+                        // Parse the completed snapshot
+                        final merged = MachineData.mergeFromPacket(
+                          reconstructed,
+                          state.machineData,
+                        );
+                        state = state.copyWith(
+                          characteristicValue: reconstructed,
+                          machineData: merged,
+                        );
+                        if (reconstructed.contains('TRANSITION:False')) {
+                          setBusy(false);
+                        }
+
+                        // Clear buffer
+                        _fChunks.clear();
+                        _fExpectedTotal = 0;
+                        _fSnapshotId = 0;
+                        return; // Already parsed above
+                      }
+
+                      // More chunks expected — don't parse yet
+                      return;
+                    }
+
+                    // ---- End F| chunk reassembly ----
+
                     final merged = MachineData.mergeFromPacket(
                       decoded,
                       state.machineData,
@@ -259,7 +371,24 @@ class BleNotifier extends Notifier<BleState> {
                       machineData: merged,
                     );
                     if (decoded.contains('TRANSITION:False')) {
-                      state = state.copyWith(isBusy: false);
+                      setBusy(false);
+                    }
+
+                    // ---- Phase 2 instrumentation: timestamp transition edges ----
+                    // Lets us measure the real client-visible latency:
+                    //   command sent  ->  TRANSITION=True received  ->  TRANSITION=False received
+                    if (decoded.contains('TRANSITION:True') ||
+                        decoded.contains('TRANSITION:False')) {
+                      final ts = _timestamp();
+                      final label = decoded.contains('TRANSITION:True')
+                          ? 'TRANSITION=True'
+                          : 'TRANSITION=False';
+                      final updated = [
+                        ...state.serialLog,
+                        "$ts RCV $label [$decoded]",
+                      ];
+                      updated.removeRange(0, max(0, updated.length - 500));
+                      state = state.copyWith(serialLog: updated);
                     }
                   },
                   onError: (error) {
@@ -319,7 +448,10 @@ class BleNotifier extends Notifier<BleState> {
     }
   }
 
-  Future<bool> writeToCharacteristic(String data) async {
+  Future<bool> writeToCharacteristic(
+    String data, {
+    Duration busyTimeout = const Duration(seconds: 8),
+  }) async {
     if (state.connectedDevice == null) {
       state = state.copyWith(errorMessage: "No device connected");
       return false;
@@ -330,11 +462,11 @@ class BleNotifier extends Notifier<BleState> {
       return false;
     }
 
-    setBusy(true);
+    setBusy(true, timeout: busyTimeout);
 
     bool ok = await _performWrite(data);
     if (!ok) {
-      state = state.copyWith(isBusy: false);
+      setBusy(false);
     }
     return ok;
   }
@@ -358,6 +490,10 @@ class BleNotifier extends Notifier<BleState> {
     try {
       if (_cmdCharacteristic!.properties.write) {
         await _cmdCharacteristic!.write(data.codeUnits);
+        // Debug-only: the actual characteristic-write boundary — fires for
+        // every real BLE TX regardless of caller (writeToCharacteristic()/
+        // writeRawToCharacteristic()), not just the UI button press.
+        pvcTrace("BLE_TX", data);
         final ts = _timestamp();
         final updated = [...state.serialLog, "$ts TX: $data"];
         updated.removeRange(0, max(0, updated.length - 500));
@@ -421,15 +557,26 @@ class BleNotifier extends Notifier<BleState> {
 
   // Clear error message
   // Set/clear the optimistic transition lock
-  void setBusy(bool value) {
+  //
+  // Only one busy-guard safety timer is ever outstanding: any previous
+  // timer is cancelled before a new one is created (or on clear), so a
+  // stale timer from an earlier write can never fire after busy has since
+  // been legitimately cleared and possibly re-set by a new operation.
+  void setBusy(bool value, {Duration? timeout}) {
+    _busyTimer?.cancel();
+    _busyTimer = null;
     state = state.copyWith(isBusy: value);
     if (value) {
-      // Safety timeout: auto-clear after 8s if hardware never responds
-      Timer(const Duration(seconds: 8), () {
+      // Safety timeout: auto-clear if hardware never responds. Default 8s;
+      // mode changes (FUNCTION reboot) can take up to 10s, so callers pass a
+      // longer timeout to avoid a spurious unlock while the PAM is still busy.
+      final effective = timeout ?? const Duration(seconds: 8);
+      _busyTimer = Timer(effective, () {
         if (state.isBusy) {
-          logger.w("⚠️ Busy guard timed out — forcing unlock");
+          logger.w("D| ⚠️ Busy guard timed out — forcing unlock");
           state = state.copyWith(isBusy: false);
         }
+        _busyTimer = null;
       });
     }
   }

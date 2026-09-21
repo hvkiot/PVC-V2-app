@@ -1,6 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
 import 'package:logger/logger.dart';
-import 'package:pvc_v2/utils/pvc_debug_trace.dart';
 
 // This is required for the generator to work
 part 'machine_data.g.dart';
@@ -55,9 +54,8 @@ const _cfgIntKeys = {
 /// DF_AIN_B blocks) or F| (removed from buildFullPacket()) — Basic Config
 /// reads the live AIN type from the top-level MODE field instead (see
 /// basic_config_screen.dart, which only ever reads machineData.mode).
-/// ExpConfig.ainAType/ainBType have been removed entirely (2026-09, along
-/// with their AdvancedConfigDraft/machine_data.g.dart counterparts) —
-/// Parameter 07 uses ainACoefType/ainBCoefType instead (see below).
+/// ExpConfig.ainAType/ainBType have been removed entirely (see below);
+/// Parameter 07 uses ainACoefType/ainBCoefType instead.
 const _cfgStringKeys = {
   'SENS',
   'POL_GLOBAL',
@@ -202,6 +200,9 @@ class StdConfig {
 /// edits and writes back via the ESP32's CMD `CFG_*` family.
 @JsonSerializable()
 class ExpConfig {
+  @JsonKey(name: 'ACC')
+  final bool accOn;
+
   @JsonKey(name: 'SENS')
   final String sens;
 
@@ -230,11 +231,9 @@ class ExpConfig {
   /// "C", or "I" (PAM readback uses "I" for current; the app's own AIN edit
   /// dialog writes "C" — both mean the same coefficient type, see the
   /// display mapping in advanced_config_screen.dart). This is NOT the same
-  /// concept as the live/root AIN input type — that lives solely in
-  /// [MachineData.mode] (read from the top-level `MODE` wire field) and is
-  /// unaffected by Advanced Config edits; there is no longer a separate
-  /// `ainAType`/`ainBType` field on this class (removed 2026-09). Defaults
-  /// to "None" (uninitialized) until the ESP's PAM readback populates it,
+  /// concept as the live/root AIN input type Basic Config reads from the
+  /// top-level MODE field, unaffected by Advanced Config edits. Defaults to
+  /// "None" (uninitialized) until the ESP's PAM readback populates it,
   /// matching the ESP32 gState.ainACoefType default.
   @JsonKey(name: 'AIN_A_COEF_TYPE')
   final String ainACoefType;
@@ -334,6 +333,7 @@ class ExpConfig {
   final int ipwmB;
 
   const ExpConfig({
+    this.accOn = true,
     this.sens = 'AUTO',
     this.ccMode = false,
     this.limGlobal = 0,
@@ -387,6 +387,7 @@ class ExpConfig {
   /// EXP-section presence for D|/L| routing via [_expGroupKeys].
   static ExpConfig fromWire(Map<String, String> raw, ExpConfig seed) {
     return ExpConfig(
+      accOn: _onOf(raw, const ['ACC'], seed.accOn),
       sens: _strOf(raw, 'SENS') ?? seed.sens,
       ccMode: _onOf(raw, const ['CCMODE'], seed.ccMode),
       limGlobal: _intOf(raw, const ['LIM_GLOBAL'], seed.limGlobal),
@@ -395,10 +396,6 @@ class ExpConfig {
       polGlobal: _strOf(raw, 'POL_GLOBAL') ?? seed.polGlobal,
       polA: _strOf(raw, 'POL_A') ?? seed.polA,
       polB: _strOf(raw, 'POL_B') ?? seed.polB,
-
-      // AIN_A_TYPE/AIN_B_TYPE are no longer sent by the ESP (removed from both
-      // buildDeltaPacket() and buildFullPacket()) — always carry the seed
-      // value forward. See the _cfgStringKeys comment above for details.
       ainACoefType: _strOf(raw, 'AIN_A_COEF_TYPE') ?? seed.ainACoefType,
       ainBCoefType: _strOf(raw, 'AIN_B_COEF_TYPE') ?? seed.ainBCoefType,
       ainAa: _intOf(raw, const ['AIN_AA'], seed.ainAa),
@@ -492,34 +489,14 @@ class MachineData {
   @JsonKey(name: 'PAM_CONNECTED')
   final bool pamConnected;
 
-  /// App-preference cache (the ESP32's CONFIG_VIEW in the D|/F| protocol):
-  /// "STD" or "EXP", recording which config screen was last saved from. NOT
-  /// PAM's own MODE STD/EXP register (see [pamMode] for that) and NO LONGER
-  /// what decides which config screen ([ConfigScreen]) is shown — that
-  /// authority is [pamMode]. This field's one remaining job is internal:
-  /// routing which section (std/exp) a full (F|) snapshot rebuilds fresh
-  /// vs. carries forward (see the packet-merge logic below), so a save on
-  /// one screen can never clobber the other screen's locally-cached values.
-  /// Defaults to "STD".
+  /// Which config view (Basic/Advanced) is currently active (the ESP32's
+  /// CONFIG_VIEW in the D|/F| protocol): "STD" or "EXP". Purely an
+  /// app-preference value cached on the ESP; it is NOT PAM's own MODE
+  /// STD/EXP register — that's a separate, transient, PAM-internal concept
+  /// (see [mode] for the real AIN V/C value). Defaults to "STD" (Basic) so a
+  /// fresh/never-saved device opens on Basic Config.
   @JsonKey(name: 'CONFIG_VIEW')
   final String configView;
-
-  /// The ACTUAL live PAM operating MODE (`PAM_MODE` wire key): "STD" or
-  /// "EXP", read back from PAM's own MODE register on the ESP — and the
-  /// single source of truth for which config screen ([ConfigScreen]) is
-  /// shown. Changes ONLY via an explicit Basic/Advanced drawer selection
-  /// (see [BleCommandController.setPamMode] / CustomDrawer's
-  /// `_ConfigViewSelector`) — never automatically on connect/reconnect, and
-  /// never as a side effect of saving Basic/Advanced Config parameters. This
-  /// is distinct from BOTH [mode] (the AINA live V/C input type, wire key
-  /// `MODE`) AND [configView] (the now UI-selection-inert app preference
-  /// cache, wire key `CONFIG_VIEW`) — none of the three should ever be
-  /// derived from one another. Some ESP operations (AIN coefficient
-  /// read/write) temporarily switch PAM into EXP and back; the ESP only
-  /// reports the settled final value here, never a transient mid-operation
-  /// one. Defaults to "STD" until the first real reading arrives.
-  @JsonKey(name: 'PAM_MODE')
-  final String pamMode;
 
   /// Basic (STD) config section.
   final StdConfig stdConfig;
@@ -546,7 +523,6 @@ class MachineData {
     this.transition = false,
     this.pamConnected = false,
     this.configView = _defaultConfigView,
-    this.pamMode = 'STD',
     this.stdConfig = const StdConfig(),
     this.expConfig = const ExpConfig(),
   });
@@ -580,7 +556,6 @@ class MachineData {
     bool? transition,
     bool? pamConnected,
     String? configView,
-    String? pamMode,
     StdConfig? stdConfig,
     ExpConfig? expConfig,
   }) {
@@ -603,10 +578,18 @@ class MachineData {
       transition: transition ?? this.transition,
       pamConnected: pamConnected ?? this.pamConnected,
       configView: configView ?? this.configView,
-      pamMode: pamMode ?? this.pamMode,
       stdConfig: stdConfig ?? this.stdConfig,
       expConfig: expConfig ?? this.expConfig,
     );
+  }
+
+  /// Returns a copy with a single JSON field updated by name.
+  /// NOTE: dead code — `modifyMachineData` in ble_provider has no callers.
+  /// Kept compiling via the toJson/fromJson round trip.
+  MachineData modifyField(String field, dynamic value) {
+    final json = toJson();
+    json[field] = value;
+    return MachineData.fromJson(json);
   }
 
   /// Modified factory to keep your CSV-style parsing logic
@@ -688,7 +671,7 @@ class MachineData {
           ? ExpConfig.fromWire(raw, expActive ? const ExpConfig() : expCarry)
           : expCarry;
 
-      final result = MachineData(
+      return MachineData(
         func: _strOf(raw, 'FUNC') ?? rootBase.func,
         inputA: _dblOf(raw, const ['WA'], rootBase.inputA),
         inputB: _dblOf(raw, const ['WB'], rootBase.inputB),
@@ -722,137 +705,12 @@ class MachineData {
           'PAM_CONNECTED',
         ], rootBase.pamConnected),
         configView: configView,
-        // Actual PAM MODE (STD/EXP) — a plain root-level scalar like
-        // voltage/transition above: NOT part of the CONFIG_VIEW-routed
-        // std/exp carry-forward logic, and NEVER derived from MODE (AINA
-        // V/C) or from configView.
-        pamMode: _strOf(raw, 'PAM_MODE') ?? rootBase.pamMode,
         stdConfig: stdConfig,
         expConfig: expConfig,
       );
-
-      // Debug-only: parsed-packet summary + field-level diff against the
-      // prior state. Fires once per packet, right after parsing — never
-      // inside the D|/L| onValueReceived callback itself (that's BLE_RX).
-      if (kPvcDebugProtocol) {
-        // final subTag = prefix.isEmpty ? 'LEGACY' : prefix.substring(0, 1);
-        // pvcTrace(
-        //   'PARSE',
-        //   'func=${result.func} mode=${result.mode} pamMode=${result.pamMode} '
-        //       'enabledB=${result.enableB} currentA=${result.coilACurrent} '
-        //       'currentB=${result.coilBCurrent} currentS=${result.coilCurrent}',
-        //   sub: subTag,
-        // );
-        _traceMachineDataStateChanges(rootBase, result);
-      }
-
-      return result;
     } catch (e) {
       Logger().e("Parsing error: $e");
       return rootBase;
     }
-  }
-
-  /// Debug-only: logs `[APP][STATE][ms] FIELD old -> new` for exactly the
-  /// fields called out in the trace spec, only when the value actually
-  /// changed vs. [oldData]. No-op when [kPvcDebugProtocol] is false (see
-  /// pvc_debug_trace.dart) — never affects merge/parse behavior.
-  static void _traceMachineDataStateChanges(
-    MachineData oldData,
-    MachineData newData,
-  ) {
-    void t(String field, Object oldV, Object newV) {
-      if (oldV != newV) pvcTrace('STATE', '$field $oldV -> $newV');
-    }
-
-    t('PAM_MODE', oldData.pamMode, newData.pamMode);
-    t('MODE', oldData.mode, newData.mode);
-    t('ENABLED_B', oldData.enableB, newData.enableB);
-    t('CURRENT_S', oldData.coilCurrent, newData.coilCurrent);
-    t('CURRENT_A', oldData.coilACurrent, newData.coilACurrent);
-    t('CURRENT_B', oldData.coilBCurrent, newData.coilBCurrent);
-    t('AIN_AA', oldData.expConfig.ainAa, newData.expConfig.ainAa);
-    t('AIN_AB', oldData.expConfig.ainAb, newData.expConfig.ainAb);
-    t('AIN_AC', oldData.expConfig.ainAc, newData.expConfig.ainAc);
-    t(
-      'AIN_A_COEF_TYPE',
-      oldData.expConfig.ainACoefType,
-      newData.expConfig.ainACoefType,
-    );
-    t('AIN_BA', oldData.expConfig.ainBa, newData.expConfig.ainBa);
-    t('AIN_BB', oldData.expConfig.ainBb, newData.expConfig.ainBb);
-    t('AIN_BC', oldData.expConfig.ainBc, newData.expConfig.ainBc);
-    t(
-      'AIN_B_COEF_TYPE',
-      oldData.expConfig.ainBCoefType,
-      newData.expConfig.ainBCoefType,
-    );
-
-    // Remaining existing D|/F| fields that were previously untraced here.
-    // Same pattern as above: only fires when the stored value actually
-    // changes, no normalization, no new fields — every field below already
-    // exists on ExpConfig/MachineData and is already parsed by
-    // ExpConfig.fromWire()/this method. ACC/PPWM/IPWM are deliberately
-    // excluded — they are raw-forwarded (CMD_FORWARD_RAW) and have no
-    // MachineData/D|/F| representation to diff.
-    t('SENS', oldData.expConfig.sens, newData.expConfig.sens);
-    t('CCMODE', oldData.expConfig.ccMode, newData.expConfig.ccMode);
-    t('LIM_GLOBAL', oldData.expConfig.limGlobal, newData.expConfig.limGlobal);
-    t('LIM_A', oldData.expConfig.limA, newData.expConfig.limA);
-    t('LIM_B', oldData.expConfig.limB, newData.expConfig.limB);
-    t('POL_GLOBAL', oldData.expConfig.polGlobal, newData.expConfig.polGlobal);
-    t('POL_A', oldData.expConfig.polA, newData.expConfig.polA);
-    t('POL_B', oldData.expConfig.polB, newData.expConfig.polB);
-    t('RAMP_A_UP', oldData.expConfig.rampAaUp, newData.expConfig.rampAaUp);
-    t(
-      'RAMP_A_DOWN',
-      oldData.expConfig.rampAaDown,
-      newData.expConfig.rampAaDown,
-    );
-    t('RAMP_B_UP', oldData.expConfig.rampAbUp, newData.expConfig.rampAbUp);
-    t(
-      'RAMP_B_DOWN',
-      oldData.expConfig.rampAbDown,
-      newData.expConfig.rampAbDown,
-    );
-    t('MIN_A', oldData.expConfig.minA, newData.expConfig.minA);
-    t('MIN_B', oldData.expConfig.minB, newData.expConfig.minB);
-    t('MAX_A', oldData.expConfig.maxA, newData.expConfig.maxA);
-    t('MAX_B', oldData.expConfig.maxB, newData.expConfig.maxB);
-    t('TRIGGER', oldData.expConfig.trigger, newData.expConfig.trigger);
-    t(
-      'DAMPL_GLOBAL',
-      oldData.expConfig.ditherAmpGlobal,
-      newData.expConfig.ditherAmpGlobal,
-    );
-    t(
-      'DAMPL_A',
-      oldData.expConfig.ditherAmpA,
-      newData.expConfig.ditherAmpA,
-    );
-    t(
-      'DAMPL_B',
-      oldData.expConfig.ditherAmpB,
-      newData.expConfig.ditherAmpB,
-    );
-    t(
-      'DFREQ_GLOBAL',
-      oldData.expConfig.ditherFreqGlobal,
-      newData.expConfig.ditherFreqGlobal,
-    );
-    t(
-      'DFREQ_A',
-      oldData.expConfig.ditherFreqA,
-      newData.expConfig.ditherFreqA,
-    );
-    t(
-      'DFREQ_B',
-      oldData.expConfig.ditherFreqB,
-      newData.expConfig.ditherFreqB,
-    );
-    t('PWM_GLOBAL', oldData.expConfig.pwmGlobal, newData.expConfig.pwmGlobal);
-    t('PWM_A', oldData.expConfig.pwmA, newData.expConfig.pwmA);
-    t('PWM_B', oldData.expConfig.pwmB, newData.expConfig.pwmB);
-    t('CONFIG_VIEW', oldData.configView, newData.configView);
   }
 }

@@ -4,6 +4,7 @@ import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/utils/machine_utils.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/app_selector_card.dart';
 
@@ -17,6 +18,61 @@ class InputScreen extends ConsumerStatefulWidget {
 class _InputScreenState extends ConsumerState<InputScreen> {
   bool _isSynchronizing = false;
 
+  // TRANSITION=True arrives on the first BLE notify tick after the firmware
+  // calls setTransition(true), so the ack wait is near-immediate.
+  static const Duration ackTimeout = Duration(seconds: 3);
+  // Upper bounds on the TRANSITION=True -> False completion window, chosen by
+  // *measured* firmware behavior (Phase 2), not assumed:
+  //   - Function change (195<->196): PAM reboot + delay(2000) + MODE poll +
+  //     1.5s EEPROM save  ~= 7.1s. Use a generous backstop so we never
+  //     false-timeout a legitimate slow operation.
+  //   - Mode / parameter change: AINA/AINB + SAVE + 1.5s EEPROM  ~= 3s.
+  // The responsiveness comes from the 50ms poll (exits the instant False
+  // arrives); the timeout is only a stale-hardware backstop.
+  static const Duration doneTimeoutFunctionChange = Duration(seconds: 10);
+  static const Duration doneTimeoutParameterChange = Duration(seconds: 4);
+
+  /// Waits until hardware signals completion.
+  ///
+  /// Flow (Phase 1): command sent -> await TRANSITION=True (starts the
+  /// completion window) -> await TRANSITION=False -> success.
+  ///
+  /// [doneTimeout] is the upper bound on the completion window; pass the value
+  /// matching the operation (function change vs parameter/mode change).
+  ///
+  /// Returns true on a clean True->False completion, false on timeout (the
+  /// caller falls back to the busy-guard / shows "timed out").
+  Future<bool> _waitForTransition(Duration doneTimeout) async {
+    final ackStart = DateTime.now();
+    bool seenTrue = false;
+    while (DateTime.now().difference(ackStart) < ackTimeout) {
+      // Re-read the flag each poll — MachineData is an immutable value object.
+      final transition = ref.read(machineDataProvider).transition;
+      if (transition) {
+        seenTrue = true;
+        break;
+      }
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
+    if (seenTrue) {
+      return _waitForDone(doneTimeout);
+    }
+    // Never saw True within the ack window. The command may still be in
+    // flight; give the done window a chance. If it reads False now, complete.
+    if (!ref.read(machineDataProvider).transition) return true;
+    return _waitForDone(doneTimeout);
+  }
+
+  Future<bool> _waitForDone(Duration doneTimeout) async {
+    final start = DateTime.now();
+    while (DateTime.now().difference(start) < doneTimeout) {
+      if (!ref.read(machineDataProvider).transition) return true;
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final machineData = ref.watch(machineDataProvider);
@@ -24,7 +80,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     final inputsNotifier = ref.read(inputsTabProvider.notifier);
     final theme = Theme.of(context);
 
-    final bool isPin15Active = machineData.pin15;
+    final bool isPinActive = machineData.pin15 || machineData.pin6;
     final bool isBusy = ref.watch(bleProvider).isBusy;
 
     final displayMode = inputsState.selectedMode ?? machineData.func;
@@ -60,12 +116,12 @@ class _InputScreenState extends ConsumerState<InputScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                if (isPin15Active)
+                if (isPinActive)
                   Center(
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
-                        "Device is currently enabled. Disable Pin 15 to modify EEPROM settings",
+                        "Device is currently enabled. Disable ${activePinsLabel(machineData.pin15, machineData.pin6)} to modify EEPROM settings",
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleSmall?.copyWith(
                           color: theme.colorScheme.error,
@@ -80,7 +136,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                   options: ['195', '196'],
                   onChanged: (value) => inputsNotifier.setMode(value!),
                   icon: Icons.mode,
-                  enabled: !isPin15Active && !isBusy,
+                  enabled: !isPinActive && !isBusy,
                 ),
                 Divider(
                   color: theme.colorScheme.onSurface.withAlpha(25),
@@ -93,7 +149,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                     options: ['Voltage', 'Current'],
                     onChanged: (value) => inputsNotifier.setInput1(value!),
                     icon: Icons.input,
-                    enabled: !isPin15Active && !isBusy,
+                    enabled: !isPinActive && !isBusy,
                   ),
                   Divider(
                     color: theme.colorScheme.onSurface.withAlpha(25),
@@ -106,7 +162,7 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                     options: ['Voltage', 'Current'],
                     onChanged: (value) => inputsNotifier.setInput1(value!),
                     icon: Icons.input,
-                    enabled: !isPin15Active && !isBusy,
+                    enabled: !isPinActive && !isBusy,
                   ),
                   Divider(
                     color: theme.colorScheme.onSurface.withAlpha(25),
@@ -118,16 +174,13 @@ class _InputScreenState extends ConsumerState<InputScreen> {
                     options: ['Voltage', 'Current'],
                     onChanged: (value) => inputsNotifier.setInput2(value!),
                     icon: Icons.input,
-                    enabled: !isPin15Active && !isBusy,
+                    enabled: !isPinActive && !isBusy,
                   ),
                 ],
                 SizedBox(height: 16),
                 ElevatedButton(
                   onPressed:
-                      (isDirty &&
-                          !isPin15Active &&
-                          !isBusy &&
-                          !_isSynchronizing)
+                      (isDirty && !isPinActive && !isBusy && !_isSynchronizing)
                       ? () {
                           save();
                         }
@@ -170,8 +223,6 @@ class _InputScreenState extends ConsumerState<InputScreen> {
     final shortUnit = unit == 'VOLTAGE' ? 'V' : 'C';
     final modeChanged = selectedMode != machineData.func;
 
-    bool success = false;
-
     // ---------- SINGLE COMBINED PROTOCOL ----------
     String command;
     if (modeChanged) {
@@ -180,7 +231,11 @@ class _InputScreenState extends ConsumerState<InputScreen> {
       command = unit; // e.g., "Voltage"
     }
 
-    bool writeOk = await bleNotifier.writeToCharacteristic(command);
+    bool writeOk = await bleNotifier.writeToCharacteristic(
+      command,
+      busyTimeout:
+          modeChanged ? doneTimeoutFunctionChange : doneTimeoutParameterChange,
+    );
     if (!writeOk) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
@@ -188,55 +243,26 @@ class _InputScreenState extends ConsumerState<InputScreen> {
       return;
     }
 
-    // Wait for acknowledgment (transition → true)
-    final ackDeadline = DateTime.now().add(const Duration(seconds: 3));
-    bool acknowledged = false;
-    while (DateTime.now().isBefore(ackDeadline)) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (ref.read(machineDataProvider).transition) {
-        acknowledged = true;
-        break;
-      }
-    }
-
-    if (!acknowledged) {
-      overlayNotifier.state = false;
-      setState(() => _isSynchronizing = false);
-      success = false;
-    } else {
-      // Wait for hardware to finish (transition → false)
-      final doneDeadline = DateTime.now().add(const Duration(seconds: 10));
-      bool completed = false;
-      while (DateTime.now().isBefore(doneDeadline)) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        if (!ref.read(machineDataProvider).transition) {
-          completed = true;
-          break;
-        }
-      }
-
-      if (completed) {
-        success = true;
-      } else {
-        overlayNotifier.state = false;
-        setState(() => _isSynchronizing = false);
-        bleNotifier.setBusy(false);
-        messageNotifier.showError("Device update timed out");
-        return;
-      }
-    }
-
-    // ---------- Handle final result ----------
-    if (success) {
-      overlayNotifier.state = false;
-      setState(() => _isSynchronizing = false);
-      ref.read(inputsTabProvider.notifier).reset();
-      messageNotifier.showSuccess("Settings updated successfully");
-    } else {
+    // Wait for the hardware transition to complete.
+    // Phase 1: await TRANSITION=True, then TRANSITION=False.
+    // Function changes (195<->196) legitimately take ~7s (PAM reboot + save),
+    // so use the longer backstop; unit/mode changes ~3s.
+    final doneTimeout = modeChanged
+        ? doneTimeoutFunctionChange
+        : doneTimeoutParameterChange;
+    final completed = await _waitForTransition(doneTimeout);
+    if (!completed) {
       overlayNotifier.state = false;
       setState(() => _isSynchronizing = false);
       bleNotifier.setBusy(false);
-      messageNotifier.showError("Device update failed");
+      messageNotifier.showError("Device update timed out");
+      return;
     }
+
+    // ---------- Handle final result ----------
+    overlayNotifier.state = false;
+    setState(() => _isSynchronizing = false);
+    ref.read(inputsTabProvider.notifier).reset();
+    messageNotifier.showSuccess("Settings updated successfully");
   }
 }

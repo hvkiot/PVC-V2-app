@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,9 +7,9 @@ import 'package:go_router/go_router.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/providers/theme_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
 import 'package:pvc_v2/screens/navigate_screens/config_screen.dart';
-import 'package:pvc_v2/screens/navigate_screens/inputs_screen.dart';
 import 'package:pvc_v2/screens/navigate_screens/pam_data_screen.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
@@ -63,8 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   late final List<Widget> _children = [
     PamDataScreen(device: device),
-    InputScreen(),
-    ConfigScreen(),
+    const ConfigScreen(),
   ];
 
   final List<BottomNavigationBarItem> _bottomNavigationBarItems = [
@@ -72,7 +72,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       icon: const Icon(Icons.home_outlined),
       label: 'Home',
     ),
-    BottomNavigationBarItem(icon: const Icon(Icons.input), label: 'Inputs'),
     BottomNavigationBarItem(icon: const Icon(Icons.settings), label: 'Config'),
   ];
 
@@ -81,8 +80,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case 0:
         return 'HOME';
       case 1:
-        return 'INPUTS';
-      case 2:
         return 'CONFIG';
       default:
         return 'HOME';
@@ -145,12 +142,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // 2. Watch Processing Overlay State
     final isProcessing = ref.watch(processingOverlayProvider);
-    final bleState = ref.watch(bleProvider);
-    final isConnected = bleState.connectedDevice == device;
+    final connectedDevice = ref.watch(
+      bleProvider.select((s) => s.connectedDevice),
+    );
+    final isConnected = connectedDevice == device;
     final theme = Theme.of(context);
-    final pamIsConnected = ref.watch(machineDataProvider).pamConnected;
-    final isBusy = ref.watch(bleProvider).isBusy;
-
+    final pamIsConnected = ref.watch(
+      machineDataProvider.select((d) => d.pamConnected),
+    );
+    final isBusy = ref.watch(bleProvider.select((s) => s.isBusy));
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -181,6 +181,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 : Container(),
           ),
           actions: [
+            if (kDebugMode) ...[
+              IconButton(
+                icon: Icon(
+                  ref.watch(themeProvider) == ThemeMode.light
+                      ? Icons.light_mode
+                      : Icons.dark_mode,
+                  size: 36,
+                ),
+                onPressed: () {
+                  ref.read(themeProvider.notifier).toggleTheme();
+                },
+              ),
+            ],
             IconButton(
               icon: const Icon(Icons.menu, size: 36),
               onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
@@ -208,8 +221,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildNoPamScreen() {
     final theme = Theme.of(context);
-    final bleState = ref.watch(bleProvider);
-    final isConnecting = bleState.isConnecting;
+    final isConnecting = ref.watch(bleProvider.select((s) => s.isConnecting));
     final device = widget.device;
     final bleNotifier = ref.read(bleProvider.notifier);
 

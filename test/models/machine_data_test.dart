@@ -45,10 +45,7 @@ void main() {
     });
 
     test('uses production defaults when optional fields are absent', () {
-      expect(
-        () => MachineData.fromPacket('FUNC:195,MODE:V'),
-        returnsNormally,
-      );
+      expect(() => MachineData.fromPacket('FUNC:195,MODE:V'), returnsNormally);
 
       final data = MachineData.fromPacket('FUNC:195,MODE:V');
       expect(data.func, '195');
@@ -82,7 +79,8 @@ void main() {
         'FIRMWARE_VERSION:2.0.3,ADAPTER_VOLTAGE:24.6V,TRANSITION:True,'
         'PAM_CONNECTED:True';
 
-    const liveUpdate = 'L|WA:2.5,WB:3.5,IA:900,IB:950,READY:A ACTIVE,PIN15:False,PIN6:True';
+    const liveUpdate =
+        'L|WA:2.5,WB:3.5,IA:900,IB:950,READY:A ACTIVE,PIN15:False,PIN6:True';
 
     const deltaUpdate = 'D|WA:5.0,MODE:V,READY:B ACTIVE';
 
@@ -201,7 +199,7 @@ void main() {
       // Start with default state
       var data = MachineData.mergeFromPacket(liveUpdate, MachineData());
       expect(data.inputA, 2.5);
-      expect(data.func, '0'); // default
+      expect(data.func, '195'); // production default
 
       // Then receive F| full snapshot
       data = MachineData.mergeFromPacket(fullSnapshot, data);
@@ -240,7 +238,10 @@ void main() {
 
     test('unknown fields are ignored safely', () {
       final base = MachineData.fromPacket('FUNC:196,WA:1.0');
-      final data = MachineData.mergeFromPacket('L|UNKNOWN_FIELD:123,WA:2.0', base);
+      final data = MachineData.mergeFromPacket(
+        'L|UNKNOWN_FIELD:123,WA:2.0',
+        base,
+      );
       expect(data.inputA, 2.0);
       expect(data.func, '196');
     });
@@ -253,7 +254,10 @@ void main() {
     });
 
     test('unknown prefix treated as legacy', () {
-      final data = MachineData.mergeFromPacket('X|WA:7.0,FUNC:195', MachineData());
+      final data = MachineData.mergeFromPacket(
+        'X|WA:7.0,FUNC:195',
+        MachineData(),
+      );
       expect(data.inputA, 7.0);
       expect(data.func, '195');
     });
@@ -269,6 +273,126 @@ void main() {
     test('ENABLE_B legacy field still works', () {
       final data = MachineData.fromPacket('ENABLE_B:True,FUNC:196');
       expect(data.enableB, isTrue);
+    });
+  });
+
+  group('MachineData configView/stdConfig/expConfig routing', () {
+    test('F| STD rebuilds stdConfig and does not touch expConfig', () {
+      final data = MachineData.mergeFromPacket(
+        'F|FUNC:196,MODE:C,CURRENT_S:1000,CURRENT_A:500,CURRENT_B:500,'
+        'CONFIG_VIEW:STD',
+        MachineData(),
+      );
+
+      expect(data.configView, 'STD');
+      expect(data.func, '196');
+      expect(data.stdConfig.func, '196');
+      expect(data.stdConfig.mode, 'C');
+      expect(data.stdConfig.coilCurrent, 1000.0);
+      expect(data.stdConfig.coilACurrent, 500.0);
+      expect(data.stdConfig.coilBCurrent, 500.0);
+      // expConfig untouched (seed = fresh defaults)
+      expect(data.expConfig.sens, 'AUTO');
+      expect(data.expConfig.limA, 0);
+    });
+
+    test('F| EXP rebuilds expConfig and carries root live fields', () {
+      final data = MachineData.mergeFromPacket(
+        'F|FUNC:196,MODE:C,SENS:MANUAL,POL_A:-,CONFIG_VIEW:EXP',
+        MachineData(),
+      );
+
+      expect(data.configView, 'EXP');
+      expect(data.func, '196');
+      expect(data.expConfig.sens, 'MANUAL');
+      expect(data.expConfig.polA, '-');
+      // stdConfig not part of this F| → stays at defaults
+      expect(data.stdConfig.func, '195');
+      expect(data.stdConfig.coilCurrent, 0.0);
+    });
+
+    test('D| STD keys update stdConfig only, expConfig untouched', () {
+      var data = MachineData.mergeFromPacket(
+        'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+        MachineData(),
+      );
+      data = MachineData.mergeFromPacket('D|FUNC:195,CURRENT_S:1500', data);
+
+      expect(data.configView, 'STD');
+      expect(data.func, '195');
+      expect(data.stdConfig.func, '195');
+      expect(data.stdConfig.coilCurrent, 1500.0);
+      expect(data.expConfig.sens, 'AUTO');
+    });
+
+    test(
+      'D| EXP keys route to expConfig by content even while view is STD',
+      () {
+        // First Advanced save: SENS delta arrives before the later
+        // CONFIG_VIEW:EXP delta, so the resolved view is still STD — content
+        // routing must still place SENS in expConfig (not stdConfig).
+        var data = MachineData.mergeFromPacket(
+          'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+          MachineData(),
+        );
+        data = MachineData.mergeFromPacket('D|SENS:MANUAL', data);
+
+        expect(data.configView, 'STD');
+        expect(data.expConfig.sens, 'MANUAL');
+        expect(data.stdConfig.func, '196');
+      },
+    );
+
+    test('D| EXP-only isolation: stdConfig untouched by EXP deltas', () {
+      var data = MachineData.mergeFromPacket(
+        'F|SENS:MANUAL,LIM_A:5,CONFIG_VIEW:EXP',
+        MachineData(),
+      );
+      data = MachineData.mergeFromPacket('D|CURRENT_S:900', data);
+
+      expect(data.stdConfig.coilCurrent, 900.0);
+      expect(data.expConfig.sens, 'MANUAL');
+      expect(data.expConfig.limA, 5);
+    });
+
+    test('D| CONFIG_VIEW:EXP flips the view without clearing stdConfig', () {
+      var data = MachineData.mergeFromPacket(
+        'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+        MachineData(),
+      );
+      data = MachineData.mergeFromPacket('D|CONFIG_VIEW:EXP', data);
+
+      expect(data.configView, 'EXP');
+      expect(data.stdConfig.func, '196');
+      expect(data.expConfig.sens, 'AUTO');
+    });
+
+    test('F| EXP carries forward a previously-sent STD section', () {
+      // Never-clobber rule: an EXP full snapshot must not reset stdConfig
+      // that a prior STD snapshot established.
+      var data = MachineData.mergeFromPacket(
+        'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+        MachineData(),
+      );
+      data = MachineData.mergeFromPacket(
+        'F|SENS:MANUAL,POL_A:-,CONFIG_VIEW:EXP',
+        data,
+      );
+
+      expect(data.configView, 'EXP');
+      expect(data.expConfig.sens, 'MANUAL');
+      expect(data.stdConfig.func, '196');
+      // Root IS replaced by the EXP F| (FUNC absent → default).
+      expect(data.func, '195');
+    });
+
+    test('CCMODE/ACC booleans parse from ON/OFF wire values', () {
+      final data = MachineData.mergeFromPacket(
+        'D|CCMODE:ON,ACC:OFF',
+        MachineData(),
+      );
+
+      expect(data.expConfig.ccMode, isTrue);
     });
   });
 }

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
+import 'package:pvc_v2/services/ble_command_controller.dart';
 
 class CustomDrawer extends ConsumerWidget {
   const CustomDrawer({super.key});
@@ -12,7 +15,9 @@ class CustomDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final machineData = ref.watch(machineDataProvider);
+    final (pamMode, firmwareVersion) = ref.watch(
+      machineDataProvider.select((d) => (d.pamMode, d.firmwareVersion)),
+    );
 
     return Drawer(
       backgroundColor: colorScheme.surface,
@@ -52,6 +57,12 @@ class CustomDrawer extends ConsumerWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
+                _ConfigViewSelector(
+                  pamMode: pamMode,
+                  theme: theme,
+                  colorScheme: colorScheme,
+                ),
+                Divider(color: colorScheme.onSurface.withAlpha(25)),
                 Semantics(
                   label: 'Firmware Update',
                   button: true,
@@ -122,10 +133,87 @@ class CustomDrawer extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text(
-              'PVC Firmware v${machineData.firmwareVersion}',
+              'PVC Firmware v$firmwareVersion',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Configuration" section — lets the user explicitly switch the ACTUAL PAM
+/// hardware MODE (STD/EXP) via [BleCommandController.setPamMode], which in
+/// turn is the single source of truth for which config screen (Basic/
+/// Advanced) [ConfigScreen] shows. This is now the ONLY place in the app
+/// that changes PAM MODE — never automatically on connect/reconnect, never
+/// as a side effect of a Basic/Advanced Config save. It intentionally does
+/// NOT touch CONFIG_VIEW (see [BleCommandController.setConfigView]), which
+/// remains a separate, now UI-selection-inert concern (F|-merge routing)
+/// still owned by BasicConfigScreen/AdvancedConfigScreen after a save. The
+/// selection shown here is always derived from [MachineData.pamMode] —
+/// never a locally-held selection — so it stays correct even if MODE
+/// changes from elsewhere, and updates automatically once the ESP's
+/// D|PAM_MODE delta confirms the change.
+class _ConfigViewSelector extends ConsumerWidget {
+  final String pamMode;
+  final ThemeData theme;
+  final ColorScheme colorScheme;
+
+  const _ConfigViewSelector({
+    required this.pamMode,
+    required this.theme,
+    required this.colorScheme,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // pamMode only ever carries 'STD' or 'EXP' (see PAM_MODE parsing in
+    // machine_data.dart); anything unexpected falls back to Basic.
+    final current = pamMode == 'EXP' ? 'EXP' : 'STD';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'CONFIGURATION',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Semantics(
+            label: 'Configuration view',
+            child: SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'STD', label: Text('Basic')),
+                ButtonSegment(value: 'EXP', label: Text('Advanced')),
+              ],
+              selected: {current},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) {
+                Navigator.pop(context); // Close the drawer immediately on tap
+                final target = selection.first;
+                // Selection is derived from MachineData.pamMode, not a
+                // local field — if the tapped segment is already the
+                // active PAM MODE, don't send a redundant BLE command.
+                if (target == current) return;
+                // setPamMode() goes through the standard busy-guarded
+                // execute() path (MODE STD/EXP -> SAVE as one ESP-side
+                // transaction) — fire-and-forget here, same UX pattern as
+                // every other drawer action; the actual source of truth is
+                // the D|PAM_MODE delta the ESP sends back once the
+                // transition completes, which ConfigScreen reacts to
+                // automatically.
+                unawaited(ref.read(bleCommandProvider).setPamMode(target));
+              },
             ),
           ),
         ],

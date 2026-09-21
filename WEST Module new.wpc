@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<WEST-ModulCmdList version="1.1">
+  <Modul Note="" ID="HVK-199&#xA;-2330&#xA;-r02(0)">
+    <Commands>
+      <CCmd Name="FUNCTION" Type="1" AType="3" VList="195|196|197" VType="11" GCode="784" Min="1" Max="3" Help="Function mode [195/196/197] please press ID button after selection ">
+        <Para Txt="196" />
+      </CCmd>
+      <CCmd Name="LG" Type="1" AType="3" VList="DE|EN" VType="11" GCode="785" Min="1" Max="2" Help="Deutsch (DE)/English (EN) - Bitte ID Button nach der Änderung dücken">
+        <Para Txt="EN" />
+      </CCmd>
+      <CCmd Name="MODE" Type="1" AType="3" VList="STD|EXP" VType="8" GCode="787" Min="128" Max="0" Help="STANDARD / EXPERT mode">
+        <Para Txt="EXP" />
+      </CCmd>
+      <CCmd Name="SENS" Type="1" AType="3" VList="ON|OFF|AUTO" VType="11" GCode="784" Min="1" Max="1" Help="Malfunction monitoring [ON/OFF/AUTO]">
+        <Para Txt="AUTO" />
+      </CCmd>
+      <CCmd Name="CCMODE" Type="1" AType="3" VList="ON|OFF" VType="8" GCode="3075" Min="64" Max="0" Help="Characteristics linearization [ON/OFF]">
+        <Para Txt="OFF" />
+      </CCmd>
+      <CCmd Name="ENABLE_B" Type="1" AType="3" VList="ON|OFF" VType="8" GCode="2048" Min="32" Max="0" Help="Separate enable signals [OFF/ON]">
+        <Para Txt="OFF" />
+      </CCmd>
+      <CCmd Name="LIM:A" Type="2" AType="3" VList="" VType="22" GCode="2048" Min="0" Max="2000" Help="Range control input signal in 0,01%">
+        <Para Val="0" />
+      </CCmd>
+      <CCmd Name="LIM:B" Type="2" AType="3" VList="" VType="22" GCode="2048" Min="0" Max="2000" Help="Range control input signal in 0,01%">
+        <Para Val="0" />
+      </CCmd>
+      <CCmd Name="POL:A" Type="1" AType="3" VList="-|+" VType="8" GCode="256" Min="1" Max="1" Help="Output polarity (+/-)">
+        <Para Txt="+" />
+      </CCmd>
+      <CCmd Name="POL:B" Type="1" AType="3" VList="-|+" VType="8" GCode="256" Min="2" Max="1" Help="Output polarity (+/-)">
+        <Para Txt="+" />
+      </CCmd>
+      <CCmd Name="AINA" Type="1" AType="3" VList="V|C" VType="2" GCode="32800" Min="-10000" Max="10000" Help="Input switching, voltage or current [V/C)">
+        <Para Txt="" />
+      </CCmd>
+      <CCmd Name="AINB" Type="1" AType="3" VList="V|C" VType="2" GCode="32896" Min="-10000" Max="10000" Help="Input switching, voltage or current [V/C)">
+        <Para Txt="" />
+      </CCmd>
+      <CCmd Name="AIN:A" Type="7" AType="3" VList="" VType="2" GCode="35840" Min="0" Max="0" Help="Input scaling via linear equation">
+        <Para A="1000" B="1000" C="0" X="U" />
+      </CCmd>
+      <CCmd Name="AIN:B" Type="7" AType="3" VList="" VType="2" GCode="34816" Min="0" Max="0" Help="Input scaling via linear equation">
+        <Para A="1000" B="1000" C="0" X="U" />
+      </CCmd>
+      <CCmd Name="AA:UP" Type="2" AType="3" VList="" VType="6" GCode="256" Min="1" Max="120000" Help="Ramptime acceleration A in ms">
+        <Para Val="100" />
+      </CCmd>
+      <CCmd Name="AA:DOWN" Type="2" AType="3" VList="" VType="6" GCode="256" Min="1" Max="120000" Help="Ramptime deceleration A in ms">
+        <Para Val="100" />
+      </CCmd>
+      <CCmd Name="AB:UP" Type="2" AType="3" VList="" VType="6" GCode="256" Min="1" Max="120000" Help="Ramptime acceleration B in ms">
+        <Para Val="100" />
+      </CCmd>
+      <CCmd Name="AB:DOWN" Type="2" AType="3" VList="" VType="6" GCode="256" Min="1" Max="120000" Help="Ramptime deceleration B in ms">
+        <Para Val="100" />
+      </CCmd>
+      <CCmd Name="CCA" Type="6" AType="3" VList="" VType="2" GCode="16384" Min="-10000" Max="10000" Help="Free definable characteristic linearization">
+        <Para X0="-10000" Y0="0" X1="-9000" Y1="0" X2="-8000" Y2="0" X3="-7000" Y3="0" X4="-6000" Y4="0" X5="-5000" Y5="0" X6="-4000" Y6="0" X7="-3000" Y7="0" X8="-2000" Y8="0" X9="-1000" Y9="0" X10="0" Y10="0" X11="1000" Y11="1000" X12="2000" Y12="2000" X13="3000" Y13="3000" X14="4000" Y14="4000" X15="5000" Y15="5000" X16="6000" Y16="6000" X17="7000" Y17="7000" X18="8000" Y18="8000" X19="9000" Y19="9000" X20="10000" Y20="10000" />
+      </CCmd>
+      <CCmd Name="CCB" Type="6" AType="3" VList="" VType="2" GCode="16384" Min="-10000" Max="10000" Help="Free definable characteristic linearization">
+        <Para X0="-10000" Y0="0" X1="-9000" Y1="0" X2="-8000" Y2="0" X3="-7000" Y3="0" X4="-6000" Y4="0" X5="-5000" Y5="0" X6="-4000" Y6="0" X7="-3000" Y7="0" X8="-2000" Y8="0" X9="-1000" Y9="0" X10="0" Y10="0" X11="1000" Y11="1000" X12="2000" Y12="2000" X13="3000" Y13="3000" X14="4000" Y14="4000" X15="5000" Y15="5000" X16="6000" Y16="6000" X17="7000" Y17="7000" X18="8000" Y18="8000" X19="9000" Y19="9000" X20="10000" Y20="10000" />
+      </CCmd>
+      <CCmd Name="MIN:A" Type="2" AType="3" VList="" VType="22" GCode="784" Min="0" Max="6000" Help="Compensation of the deadband in 0,01%">
+        <Para Val="0" />
+      </CCmd>
+      <CCmd Name="MIN:B" Type="2" AType="3" VList="" VType="22" GCode="784" Min="0" Max="6000" Help="Compensation of the deadband in 0,01%">
+        <Para Val="0" />
+      </CCmd>
+      <CCmd Name="MAX:A" Type="2" AType="3" VList="" VType="22" GCode="784" Min="5000" Max="10000" Help="Output scaling in 0,01%">
+        <Para Val="10000" />
+      </CCmd>
+      <CCmd Name="MAX:B" Type="2" AType="3" VList="" VType="22" GCode="784" Min="5000" Max="10000" Help="Output scaling in 0,01%">
+        <Para Val="10000" />
+      </CCmd>
+      <CCmd Name="TRIGGER" Type="2" AType="3" VList="" VType="22" GCode="784" Min="0" Max="3000" Help="Trigger point of the MIN function in 0,01% ">
+        <Para Val="200" />
+      </CCmd>
+      <CCmd Name="CURRENT:A" Type="2" AType="3" VList="" VType="2" GCode="256" Min="500" Max="2600" Help="Rated solenoid current 500... 2600 mA">
+        <Para Val="1000" />
+      </CCmd>
+      <CCmd Name="CURRENT:B" Type="2" AType="3" VList="" VType="2" GCode="256" Min="500" Max="2600" Help="Rated solenoid current 500... 2600 mA">
+        <Para Val="1000" />
+      </CCmd>
+      <CCmd Name="DAMPL:A" Type="2" AType="3" VList="" VType="2" GCode="256" Min="0" Max="3000" Help="Dither amplitude in 0,01% of the rated current">
+        <Para Val="500" />
+      </CCmd>
+      <CCmd Name="DAMPL:B" Type="2" AType="3" VList="" VType="2" GCode="256" Min="0" Max="3000" Help="Dither amplitude in 0,01% of the rated current">
+        <Para Val="500" />
+      </CCmd>
+      <CCmd Name="DFREQ:A" Type="2" AType="3" VList="" VType="2" GCode="256" Min="60" Max="400" Help="Dither frequency in Hz">
+        <Para Val="121" />
+      </CCmd>
+      <CCmd Name="DFREQ:B" Type="2" AType="3" VList="" VType="2" GCode="256" Min="60" Max="400" Help="Dither frequency in Hz">
+        <Para Val="121" />
+      </CCmd>
+      <CCmd Name="PWM:A" Type="1" AType="3" VList="61|72|85|100|120|150|200|269|372|488|624|781|976|1201|1420|1562|1736|1953|2232|2604" VType="11" GCode="2050" Min="1" Max="20" Help="PWM frequency in Hz">
+        <Para Txt="2604" />
+      </CCmd>
+      <CCmd Name="PWM:B" Type="1" AType="3" VList="61|72|85|100|120|150|200|269|372|488|624|781|976|1201|1420|1562|1736|1953|2232|2604" VType="11" GCode="2050" Min="1" Max="20" Help="PWM frequency in Hz">
+        <Para Txt="2604" />
+      </CCmd>
+      <CCmd Name="ACC" Type="1" AType="3" VList="ON|OFF" VType="8" GCode="7170" Min="128" Max="0" Help="Auto Adjustment of the current loop [OFF/ON].">
+        <Para Txt="OFF" />
+      </CCmd>
+      <CCmd Name="PPWM:A" Type="2" AType="3" VList="" VType="2" GCode="2048" Min="0" Max="30" Help="P-Gain of the current loop">
+        <Para Val="7" />
+      </CCmd>
+      <CCmd Name="PPWM:B" Type="2" AType="3" VList="" VType="2" GCode="2048" Min="0" Max="30" Help="P-Gain of the current loop">
+        <Para Val="7" />
+      </CCmd>
+      <CCmd Name="IPWM:A" Type="2" AType="3" VList="" VType="2" GCode="2048" Min="1" Max="100" Help="I-Gain of the current loop">
+        <Para Val="40" />
+      </CCmd>
+      <CCmd Name="IPWM:B" Type="2" AType="3" VList="" VType="2" GCode="2048" Min="1" Max="100" Help="I-Gain of the current loop">
+        <Para Val="40" />
+      </CCmd>
+    </Commands>
+    <ProzessData>
+      <PCmd Name="WA" Type="0" AType="2" PhysUnit="%" VType="2" GCode="0" CompFactor="100" Help="Command signal in %" />
+      <PCmd Name="CA" Type="0" AType="2" PhysUnit="%" VType="2" GCode="0" CompFactor="100" Help="Internal signal C in %" />
+      <PCmd Name="UA" Type="0" AType="2" PhysUnit="%" VType="2" GCode="0" CompFactor="100" Help="Output signal in %" />
+      <PCmd Name="IA" Type="0" AType="2" PhysUnit="mA" VType="2" GCode="0" CompFactor="1" Help="Solenoid current A in mA" />
+      <PCmd Name="WB" Type="0" AType="2" PhysUnit="%" VType="2" GCode="0" CompFactor="100" Help="Command signal in %" />
+      <PCmd Name="CB" Type="0" AType="2" PhysUnit="%" VType="2" GCode="0" CompFactor="100" Help="Internal signal C in %" />
+      <PCmd Name="UB" Type="0" AType="2" PhysUnit="%" VType="2" GCode="0" CompFactor="100" Help="Output signal in %" />
+      <PCmd Name="IB" Type="0" AType="2" PhysUnit="mA" VType="2" GCode="0" CompFactor="1" Help="Solenoid current B in mA" />
+    </ProzessData>
+    <StatusInfo>
+      <SCmd Name="RX1:READYA" Type="10" AType="2" GCode="0" BIndex="14" BActive="True" BInvers="False" BColor="2" Help="Chanel A Ready" />
+      <SCmd Name="RX1:READYB" Type="10" AType="2" GCode="0" BIndex="15" BActive="True" BInvers="False" BColor="2" Help="Chanel B Ready" />
+      <SCmd Name="RX1:EEPROM" Type="10" AType="2" GCode="0" BIndex="2" BActive="True" BInvers="True" BColor="1" Help="Data error in EEPROM, clear error with command SAVE." />
+      <SCmd Name="RX2:INPUT PIN9/10" Type="10" AType="2" GCode="0" BIndex="6" BActive="True" BInvers="True" BColor="1" Help="Signal error, below 4... 20 mA PIN 9/10" />
+      <SCmd Name="RX2:INPUT PIN13/14" Type="10" AType="2" GCode="0" BIndex="5" BActive="True" BInvers="True" BColor="1" Help="Signal error, below 4... 20 mA PIN 13/14" />
+      <SCmd Name="RX2:SOLENOID A" Type="10" AType="2" GCode="0" BIndex="7" BActive="True" BInvers="True" BColor="1" Help="Current error at solenoid Q; PIN 3/4" />
+      <SCmd Name="RX2:SOLENOID B" Type="10" AType="2" GCode="0" BIndex="8" BActive="True" BInvers="True" BColor="1" Help="Current error at solenoid Q; PIN 1/2" />
+      <SCmd Name="RX2:LIM:A" Type="10" AType="2" GCode="0" BIndex="11" BActive="True" BInvers="True" BColor="1" Help="......" />
+      <SCmd Name="RX2:LIM:B" Type="10" AType="2" GCode="0" BIndex="12" BActive="True" BInvers="True" BColor="1" Help="......" />
+    </StatusInfo>
+    <RemoteCtrl>
+      <RCmd Name="RC:910" Type="11" AType="2" VType="2" GCode="0" Help="" />
+      <RCmd Name="RC:14" Type="11" AType="2" VType="2" GCode="0" Help="" />
+    </RemoteCtrl>
+  </Modul>
+</WEST-ModulCmdList>
