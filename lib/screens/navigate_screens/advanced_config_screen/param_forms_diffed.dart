@@ -416,28 +416,6 @@ class _PWMField extends StatelessWidget {
     required this.onChanged,
     required this.enabled,
   });
-  static const List<int> _pwmSteps = [
-    61,
-    72,
-    85,
-    100,
-    120,
-    150,
-    200,
-    269,
-    372,
-    488,
-    624,
-    781,
-    976,
-    1201,
-    1420,
-    1562,
-    1736,
-    1953,
-    2232,
-    2604,
-  ];
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -505,7 +483,7 @@ class _PWMField extends StatelessWidget {
                   style: theme.textTheme.bodyLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
-                  items: _pwmSteps
+                  items: pwmSteps
                       .map(
                         (hz) =>
                             DropdownMenuItem(value: hz, child: Text('$hz Hz')),

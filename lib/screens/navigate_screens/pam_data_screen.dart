@@ -33,11 +33,15 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
   @override
   Widget build(BuildContext context) {
     final device = widget.device;
-    final bleState = ref.watch(bleProvider);
+    final connectedDevice = ref.watch(
+      bleProvider.select((s) => s.connectedDevice),
+    );
+    final isDataAvailable = ref.watch(
+      bleProvider.select((s) => s.characteristicValue.isNotEmpty),
+    );
     final bleNotifier = ref.read(bleProvider.notifier);
     final theme = Theme.of(context);
-    final isConnected = bleState.connectedDevice == device;
-    final isDataAvailable = bleState.characteristicValue.isNotEmpty;
+    final isConnected = connectedDevice == device;
 
     return Scaffold(
       body: SafeArea(
@@ -89,11 +93,11 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 1.6,
-                        ),
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              childAspectRatio: 1.6,
+                            ),
                         padding: const EdgeInsets.all(16),
                         itemCount: 6,
                         itemBuilder: (context, index) {
@@ -129,9 +133,15 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
                             const SizedBox(height: 20),
                             const _VoltageDisplay(),
                             const SizedBox(height: 20),
-                            const _PinRow(title: "ENABLE (A): PIN 15", pinName: 'pin15'),
+                            const _PinRow(
+                              title: "ENABLE (A): PIN 15",
+                              pinName: 'pin15',
+                            ),
                             const SizedBox(height: 20),
-                            const _PinRow(title: "ENABLE (B): PIN 6", pinName: 'pin6'),
+                            const _PinRow(
+                              title: "ENABLE (B): PIN 6",
+                              pinName: 'pin6',
+                            ),
                           ],
                         ),
                       ),
@@ -190,9 +200,7 @@ class _CoilACard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final coilA = ref.watch(
-      machineDataProvider.select((m) => m.coilA),
-    );
+    final coilA = ref.watch(machineDataProvider.select((m) => m.coilA));
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -242,9 +250,7 @@ class _CoilBCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final coilB = ref.watch(
-      machineDataProvider.select((m) => m.coilB),
-    );
+    final coilB = ref.watch(machineDataProvider.select((m) => m.coilB));
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -287,9 +293,7 @@ class _ReadyCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(
-      machineDataProvider.select(
-        (m) => (m.ready, m.enableB, m.pin15, m.pin6),
-      ),
+      machineDataProvider.select((m) => (m.ready, m.enableB, m.pin15, m.pin6)),
     );
     return _ReadyCardWidget(data: data);
   }
@@ -300,15 +304,11 @@ class _VoltageDisplay extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final voltage = ref.watch(
-      machineDataProvider.select((m) => m.voltage),
-    );
+    final voltage = ref.watch(machineDataProvider.select((m) => m.voltage));
     final theme = Theme.of(context);
     return Text(
       "Supply Voltage: ${voltage.replaceAll('.0', '')}V",
-      style: theme.textTheme.bodyMedium?.copyWith(
-        fontSize: 24,
-      ),
+      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 24),
     );
   }
 }
@@ -554,7 +554,9 @@ class _PinRowWidget extends StatelessWidget {
         children: [
           Text(
             title,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 20),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontSize: 20),
           ),
           Icon(
             value ? Icons.check_box : Icons.check_box_outline_blank,
