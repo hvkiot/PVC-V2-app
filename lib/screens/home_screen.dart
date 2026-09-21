@@ -9,9 +9,8 @@ import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
 import 'package:pvc_v2/providers/theme_provider.dart';
 import 'package:pvc_v2/routes/static_routes.dart';
-import 'package:pvc_v2/screens/navigate_screens/advanced_config_screen.dart';
+import 'package:pvc_v2/screens/navigate_screens/config_screen.dart';
 import 'package:pvc_v2/screens/navigate_screens/pam_data_screen.dart';
-import 'package:pvc_v2/screens/navigate_screens/std_screen.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
 import 'package:pvc_v2/widgets/custom_app_bar.dart';
 import 'package:pvc_v2/widgets/custom_drawer.dart';
@@ -65,8 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   late final List<Widget> _children = [
     PamDataScreen(device: device),
-    const STDScreen(),
-    AdvancedConfigScreen(),
+    const ConfigScreen(),
   ];
 
   final List<BottomNavigationBarItem> _bottomNavigationBarItems = [
@@ -76,11 +74,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ),
     BottomNavigationBarItem(
       icon: const Icon(Icons.settings),
-      label: 'Basic Config',
-    ),
-    BottomNavigationBarItem(
-      icon: const Icon(Icons.settings_backup_restore_rounded),
-      label: 'Advanced Config',
+      label: 'Config',
     ),
   ];
 
@@ -89,9 +83,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       case 0:
         return 'HOME';
       case 1:
-        return 'BASIC CONFIG';
-      case 2:
-        return 'ADVANCED CONFIG';
+        return 'CONFIG';
       default:
         return 'HOME';
     }
@@ -158,7 +150,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final theme = Theme.of(context);
     final pamIsConnected = ref.watch(machineDataProvider).pamConnected;
     final isBusy = ref.watch(bleProvider).isBusy;
-
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {

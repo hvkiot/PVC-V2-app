@@ -5,14 +5,15 @@ import 'package:flutter/services.dart';
 // Reusable parameter form widgets — match AppTextCard / AppSelectorCard theme
 // ---------------------------------------------------------------------------
 
-/// Parameter header with ID badge, name, group tag, and subtitle.
+/// Parameter header with ID badge, name, and subtitle.
 ///
-/// Mirrors the HTML `.phead` pattern from the design mockup.
+/// Mirrors the HTML `.phead` pattern from the design mockup. Intentionally
+/// does NOT show a PAM MODE STD/EXP badge — PVC screens are Basic/Advanced,
+/// and the underlying PAM MODE grouping stays an implementation detail (see
+/// AGENTS.md "PVC PRODUCT DESIGN PRINCIPLE" / "USER-FACING TERMINOLOGY").
 class ParamHeader extends StatelessWidget {
   final String id;
   final String name;
-  final String? groupLabel;
-  final Color? groupColor;
   final String? command;
   final String? subtitle;
 
@@ -20,8 +21,6 @@ class ParamHeader extends StatelessWidget {
     super.key,
     required this.id,
     required this.name,
-    this.groupLabel,
-    this.groupColor,
     this.command,
     this.subtitle,
   });
@@ -51,24 +50,16 @@ class ParamHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        // Name + group + command + subtitle
+        // Name + subtitle
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(
-                    name,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (groupLabel != null) ...[
-                    const SizedBox(width: 8),
-                    _GroupBadge(label: groupLabel!, color: groupColor),
-                  ],
-                ],
+              Text(
+                name,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 4),
@@ -83,41 +74,6 @@ class ParamHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _GroupBadge extends StatelessWidget {
-  final String label;
-  final Color? color;
-
-  const _GroupBadge({required this.label, this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bgColor = color ?? theme.colorScheme.primaryContainer;
-    final fgColor = color != null
-        ? ThemeData.estimateBrightnessForColor(color!) == Brightness.dark
-              ? Colors.white
-              : Colors.black87
-        : theme.colorScheme.onPrimaryContainer;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: fgColor,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.6,
-          fontSize: 9,
-        ),
-      ),
     );
   }
 }
@@ -546,6 +502,137 @@ class _StepperButton extends StatelessWidget {
   }
 }
 
+/// Discrete-value dropdown card — same header/unit-chip chrome as
+/// [NumericStepperCard], but for a parameter whose device-accepted values
+/// are a fixed, non-contiguous set rather than a free 1-unit-step range.
+///
+/// No free-text entry and no +/-  stepper: the only way to change the value
+/// is picking one of [options]. Used by parameter 13 (Dither Frequency).
+class DropdownValueCard extends StatelessWidget {
+  final String title;
+  final String command;
+  final int value;
+  final List<int> options;
+  final String unit;
+  final ValueChanged<int> onChanged;
+  final bool enabled;
+
+  const DropdownValueCard({
+    super.key,
+    required this.title,
+    required this.command,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.unit = '',
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Defensive only: DropdownButton requires its value to match one of its
+    // items exactly, or it throws. Under normal operation the current value
+    // always comes from the same PAM-readback discrete set as `options`, so
+    // this never triggers — it just avoids a hard crash if it ever doesn't,
+    // without snapping/rounding it to anything (mirrors the existing
+    // `_PWMField` dropdown pattern used for parameter 14).
+    final dropdownValue = options.contains(value) ? value : null;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$title  $command',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (unit.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      unit,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Container(
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: enabled
+                    ? theme.colorScheme.surface
+                    : theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: enabled
+                      ? theme.colorScheme.primary
+                      : theme.disabledColor.withAlpha(80),
+                  width: 1.5,
+                ),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  isDense: true,
+                  isExpanded: true,
+                  value: dropdownValue,
+                  hint: Text(value.toString()),
+                  icon: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 20,
+                    color: enabled
+                        ? theme.colorScheme.primary
+                        : theme.disabledColor,
+                  ),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: enabled
+                        ? theme.colorScheme.onSurface
+                        : theme.disabledColor,
+                  ),
+                  items: [
+                    for (final v in options)
+                      DropdownMenuItem<int>(
+                        value: v,
+                        child: Text(v.toString()),
+                      ),
+                  ],
+                  onChanged: enabled
+                      ? (v) {
+                          if (v != null) onChanged(v);
+                        }
+                      : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Polarity card — shows +/- segmented for a channel.
 ///
 /// Used by parameter 06 (POL).
@@ -694,233 +781,6 @@ class TabbedPanelCard extends StatelessWidget {
             tabChildren[selectedTab],
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// AIN scaling row (a/b/c constants).
-class AINScalingRow extends StatelessWidget {
-  final String label;
-  final int valueA;
-  final int valueB;
-  final int valueC;
-  final ValueChanged<int> onAChanged;
-  final ValueChanged<int> onBChanged;
-  final ValueChanged<int> onCChanged;
-  final bool enabled;
-
-  const AINScalingRow({
-    super.key,
-    required this.label,
-    required this.valueA,
-    required this.valueB,
-    required this.valueC,
-    required this.onAChanged,
-    required this.onBChanged,
-    required this.onCChanged,
-    this.enabled = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            AINConstantRow(
-              label: 'Numerator a',
-              value: valueA,
-              onChanged: onAChanged,
-              enabled: enabled,
-            ),
-            AINConstantRow(
-              label: 'Denominator b',
-              value: valueB,
-              onChanged: onBChanged,
-              enabled: enabled,
-            ),
-            AINConstantRow(
-              label: 'Input offset c',
-              value: valueC,
-              onChanged: onCChanged,
-              enabled: enabled,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Output = a / b \u00D7 (Input \u2212 c). Each constant: \u221210000 to 10000.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class AINConstantRow extends StatefulWidget {
-  final String label;
-  final int value;
-  final ValueChanged<int> onChanged;
-  final bool enabled;
-
-  const AINConstantRow({
-    super.key,
-    required this.label,
-    required this.value,
-    required this.onChanged,
-    required this.enabled,
-  });
-
-  @override
-  State<AINConstantRow> createState() => _AINConstantRowState();
-}
-
-class _AINConstantRowState extends State<AINConstantRow> {
-  late TextEditingController _ctrl;
-  late FocusNode _focus;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = TextEditingController(text: widget.value.toString());
-    _focus = FocusNode();
-    _focus.addListener(_onFocusChange);
-  }
-
-  @override
-  void didUpdateWidget(covariant AINConstantRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.value != widget.value && !_focus.hasFocus) {
-      _ctrl.text = widget.value.toString();
-    }
-  }
-
-  void _onFocusChange() {
-    if (!_focus.hasFocus) _commit();
-  }
-
-  void _commit() {
-    final parsed = int.tryParse(_ctrl.text.trim());
-    if (parsed == null) {
-      _ctrl.text = widget.value.toString();
-      return;
-    }
-    final clamped = parsed.clamp(-10000, 10000);
-    // snap to 50 step? keep exact for AIN constants
-    if (clamped != widget.value) widget.onChanged(clamped);
-    if (clamped.toString() != _ctrl.text) _ctrl.text = clamped.toString();
-  }
-
-  @override
-  void dispose() {
-    _focus.removeListener(_onFocusChange);
-    _focus.dispose();
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              widget.label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: widget.enabled
-                    ? theme.colorScheme.onSurface
-                    : theme.disabledColor,
-              ),
-            ),
-          ),
-          _StepperButton(
-            icon: Icons.remove,
-            onPressed: widget.enabled && widget.value > -10000
-                ? () =>
-                      widget.onChanged((widget.value - 50).clamp(-10000, 10000))
-                : null,
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 110,
-            height: 48,
-            child: TextField(
-              controller: _ctrl,
-              focusNode: _focus,
-              enabled: widget.enabled,
-              textAlign: TextAlign.center,
-              keyboardType: const TextInputType.numberWithOptions(signed: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[-0-9]')),
-              ],
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: widget.enabled
-                    ? theme.colorScheme.onSurface
-                    : theme.disabledColor,
-              ),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: widget.enabled
-                    ? theme.colorScheme.surface
-                    : theme.colorScheme.surfaceContainerHighest,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 1.5,
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.outline.withAlpha(100),
-                    width: 1.2,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: theme.colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-              ),
-              onSubmitted: (_) => _commit(),
-              onTapOutside: (_) => _focus.unfocus(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _StepperButton(
-            icon: Icons.add,
-            onPressed: widget.enabled && widget.value < 10000
-                ? () =>
-                      widget.onChanged((widget.value + 50).clamp(-10000, 10000))
-                : null,
-          ),
-        ],
       ),
     );
   }
@@ -1270,6 +1130,230 @@ class HelpCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class CurrentLoopGainRow extends StatefulWidget {
+  final String label;
+  final String command;
+  final int value;
+  final int min;
+  final int max;
+  final List<int> steps;
+  final ValueChanged<int> onChanged;
+  final bool enabled;
+
+  const CurrentLoopGainRow({
+    super.key,
+    required this.label,
+    required this.command,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.steps,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  @override
+  State<CurrentLoopGainRow> createState() => _CurrentLoopGainRowState();
+}
+
+class _CurrentLoopGainRowState extends State<CurrentLoopGainRow> {
+  late TextEditingController _ctrl;
+  late FocusNode _focus;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.value.toString());
+    _focus = FocusNode();
+    _focus.addListener(_onFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant CurrentLoopGainRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && !_focus.hasFocus) {
+      _ctrl.text = widget.value.toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    final parsed = int.tryParse(_ctrl.text.trim());
+    if (parsed == null) {
+      _ctrl.text = widget.value.toString();
+      return;
+    }
+    final clamped = parsed.clamp(widget.min, widget.max);
+    _ctrl.text = clamped.toString();
+    if (clamped != widget.value) widget.onChanged(clamped);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _SmallButton(
+                  label: '\u2212',
+                  onTap: widget.enabled
+                      ? () {
+                          final v = (widget.value - 1).clamp(
+                            widget.min,
+                            widget.max,
+                          );
+                          widget.onChanged(v);
+                        }
+                      : null,
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  height: 48,
+                  width: 140,
+                  child: TextField(
+                    controller: _ctrl,
+                    focusNode: _focus,
+                    enabled: widget.enabled,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: widget.enabled
+                          ? theme.colorScheme.onSurface
+                          : theme.disabledColor,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: widget.enabled
+                          ? theme.colorScheme.surface
+                          : theme.colorScheme.surfaceContainerHighest,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    onSubmitted: (_) => _commit(),
+                    onTapOutside: (_) => _focus.unfocus(),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _SmallButton(
+                  label: '+',
+                  onTap: widget.enabled
+                      ? () {
+                          final v = (widget.value + 1).clamp(
+                            widget.min,
+                            widget.max,
+                          );
+                          widget.onChanged(v);
+                        }
+                      : null,
+                ),
+                const SizedBox(width: 6),
+
+                for (final step in widget.steps) ...[
+                  _QuickButton(
+                    label: step >= 1000 ? '+${step ~/ 1000}k' : '+$step',
+                    onTap: widget.enabled
+                        ? () => widget.onChanged(
+                            (widget.value + step).clamp(widget.min, widget.max),
+                          )
+                        : null,
+                  ),
+                  if (step != widget.steps.last) const SizedBox(width: 6),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+
+  const _SmallButton({required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = onTap != null;
+    return Material(
+      color: enabled
+          ? theme.colorScheme.primaryContainer
+          : theme.disabledColor.withAlpha(30),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: SizedBox(
+          width: 50,
+          height: 50,
+          child: Center(
+            child: Text(
+              label,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: enabled
+                    ? theme.colorScheme.primary
+                    : theme.disabledColor,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

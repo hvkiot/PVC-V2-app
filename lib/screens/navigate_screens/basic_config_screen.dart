@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/configuration_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
-import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/services/ble_command_controller.dart';
 import 'package:pvc_v2/utils/machine_utils.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/widgets/app_selector_card.dart';
@@ -11,57 +13,25 @@ import 'package:pvc_v2/widgets/app_text_card.dart';
 
 /// PVC kit — single unified STD screen.
 /// Only three parameters: Function, AINA, Current.
-class STDScreen extends ConsumerStatefulWidget {
-  const STDScreen({super.key});
+class BasicConfigScreen extends ConsumerStatefulWidget {
+  const BasicConfigScreen({super.key});
 
   @override
-  ConsumerState<STDScreen> createState() => _STDScreenState();
+  ConsumerState<BasicConfigScreen> createState() => _BasicConfigScreenState();
 }
 
-class _STDScreenState extends ConsumerState<STDScreen> {
+class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
   bool _isSynchronizing = false;
-
-  // ── Timing ──────────────────────────────────────────────────────────────
-  static const Duration ackTimeout = Duration(seconds: 3);
-  static const Duration doneTimeoutFunctionChange = Duration(seconds: 10);
-  static const Duration doneTimeoutParameterChange = Duration(seconds: 4);
-
-  // ── Transition wait (10 ms poll) ──────────────────────────────────────
-  Future<bool> _waitForTransition(Duration doneTimeout) async {
-    final ackSw = Stopwatch()..start();
-    bool seenTrue = false;
-
-    while (ackSw.elapsed < ackTimeout) {
-      if (ref.read(machineDataProvider).transition) {
-        seenTrue = true;
-        break;
-      }
-      await Future.delayed(const Duration(milliseconds: 10));
-    }
-
-    if (!seenTrue && !ref.read(machineDataProvider).transition) return true;
-    return _waitForDone(doneTimeout);
-  }
-
-  Future<bool> _waitForDone(Duration doneTimeout) async {
-    final sw = Stopwatch()..start();
-    while (sw.elapsed < doneTimeout) {
-      if (!ref.read(machineDataProvider).transition) return true;
-      await Future.delayed(const Duration(milliseconds: 10));
-    }
-    return false;
-  }
 
   // ── Save ────────────────────────────────────────────────────────────────
   void _save() async {
     final machineData = ref.read(machineDataProvider);
     final configState = ref.read(configTabProvider);
     final inputsState = ref.read(inputsTabProvider);
-    final bleNotifier = ref.read(bleProvider.notifier);
     final configNotifier = ref.read(configTabProvider.notifier);
     final inputsNotifier = ref.read(inputsTabProvider.notifier);
-    final overlayNotifier = ref.read(processingOverlayProvider.notifier);
     final messageNotifier = ref.read(globalMessageProvider.notifier);
+    final bleCommand = ref.read(bleCommandProvider);
 
     if (machineData.transition) {
       messageNotifier.showError("Device is busy, please wait");
@@ -166,43 +136,33 @@ class _STDScreenState extends ConsumerState<STDScreen> {
     }
 
     // ── Execute back-to-back ─────────────────────────────────────────────
-    overlayNotifier.state = true;
+    // Delegates the write/ack/transition-poll/overlay sequence to the shared
+    // BleCommandController (same logic Advanced Config will reuse), so the
+    // behavior below is byte-for-byte what the previous inline loop did.
     setState(() => _isSynchronizing = true);
 
-    final doneTimeout = modeChanged
-        ? doneTimeoutFunctionChange
-        : doneTimeoutParameterChange;
-    bool allSuccess = true;
-
-    for (String cmd in commandsToSend) {
-      // Mode changes (FUNCTION reboot) can take up to doneTimeoutFunctionChange
-      // (10s); pass a matching busy-guard timeout so the guard doesn't spuriously
-      // unlock while the PAM is still busy. Param changes use the 4s param timeout.
-      final busyTimeout = modeChanged
-          ? doneTimeoutFunctionChange
-          : doneTimeoutParameterChange;
-      final writeOk = await bleNotifier.writeToCharacteristic(
-        cmd,
-        busyTimeout: busyTimeout,
-      );
-      if (!writeOk) {
-        allSuccess = false;
-        break;
-      }
-      if (!await _waitForTransition(doneTimeout)) {
-        allSuccess = false;
-        bleNotifier.setBusy(false);
-        break;
-      }
+    for (final command in commandsToSend) {
+      debugPrint('D| [BasicConfig] Sending command: $command');
     }
 
-    overlayNotifier.state = false;
+    final allSuccess = await bleCommand.execute(
+      commandsToSend,
+      isModeChange: modeChanged,
+    );
+
     setState(() => _isSynchronizing = false);
 
     if (allSuccess) {
       configNotifier.reset(0.0, 0.0, 0.0);
       inputsNotifier.reset();
       messageNotifier.showSuccess("Settings updated successfully");
+      // Best-effort: record that Basic Config is the last-saved screen.
+      // NOTE: no longer what decides which screen ConfigScreen reopens on
+      // reconnect (that's MachineData.pamMode now) — configView's remaining
+      // job is the F|-snapshot active/inactive section merge routing in
+      // MachineData's packet parser. Not awaited — an app-preference cache,
+      // not part of the save's success/failure path.
+      unawaited(bleCommand.setConfigView('STD'));
     } else {
       messageNotifier.showError("Failed to save settings");
     }

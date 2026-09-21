@@ -145,17 +145,42 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
 // --- Extracted sub-widgets with granular selects ---
 
+/// Normalizes a raw PAM AIN coefficient-type token to the app's V/C
+/// display shape. Confirmed hardware behavior: PAM readback does not echo
+/// the token the app writes — it reports "U" for voltage and "I" for
+/// current (write V -> readback U; write C -> readback I). "V"/"U" -> "V";
+/// "C"/"I" -> "C"; anything else (e.g. "None", empty) -> "V". Must stay
+/// identical to the copies in ble_command_controller.dart and
+/// advanced_config_draft_provider.dart, which normalize the same
+/// PAM-readback-vs-editable boundary, and to the ESP's own
+/// normalizeCoefType() in PVC_V2_ESP32.ino (same boundary, firmware side).
+String _normalizeCoefType(String raw) => switch (raw) {
+  'V' || 'U' => 'V',
+  'C' || 'I' => 'C',
+  _ => 'V',
+};
+
 class _InputACard extends ConsumerWidget {
   const _InputACard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(
-      machineDataProvider.select((m) => (m.inputA, m.mode)),
+      machineDataProvider.select(
+        (m) => (m.inputA, m.mode, m.pamMode, m.expConfig.ainACoefType),
+      ),
     );
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final unit = data.$2 == 'C' ? 'mA' : 'V';
+    // STD: unit follows the live root MODE, exactly as before.
+    // EXP: unit follows THIS channel's own AIN_A_COEF_TYPE — the ESP now
+    // scales WA by that same per-channel type in EXP (see readCycle()'s
+    // scaleTypeA), so the numeric value already matches this unit; no
+    // client-side rescaling is done or needed. Source of truth for
+    // STD vs. EXP is pamMode, never configView/mode.
+    final isExp = data.$3 == 'EXP';
+    final type = isExp ? _normalizeCoefType(data.$4) : data.$2;
+    final unit = type == 'C' ? 'mA' : 'V';
 
     return _SensorCard(
       title: 'INPUT A',
@@ -192,11 +217,22 @@ class _InputBCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(
-      machineDataProvider.select((m) => (m.inputB, m.mode)),
+      machineDataProvider.select(
+        (m) => (m.inputB, m.mode, m.pamMode, m.expConfig.ainBCoefType),
+      ),
     );
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final unit = data.$2 == 'C' ? 'mA' : 'V';
+    // STD: unit follows the live root MODE, exactly as before (preserved
+    // existing Function-196 behavior — Input B has never had its own live
+    // STD mode; it shares the root MODE just like the ESP's STD scaling
+    // does). EXP: unit follows THIS channel's own AIN_B_COEF_TYPE,
+    // independently of Input A — the ESP now scales WB by that same
+    // per-channel type in EXP (see readCycle()'s scaleTypeB), so the
+    // numeric value already matches this unit; no client-side rescaling.
+    final isExp = data.$3 == 'EXP';
+    final type = isExp ? _normalizeCoefType(data.$4) : data.$2;
+    final unit = type == 'C' ? 'mA' : 'V';
 
     return _SensorCard(
       title: 'INPUT B',
