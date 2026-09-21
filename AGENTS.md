@@ -32,12 +32,13 @@
 These are wired hardware. The app can display their state but must never pretend to switch them.
 
 | Physical item | What it is | App CAN | App CANNOT |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **PIN 15** | General enable input, 24 V. Hardware master switch for the whole amplifier power stage. While ON, solenoid outputs may carry up to 2.6 A. | Read its state (`PIN15` key in `machine_data`) and show lock banners | Toggle it, or allow any EEPROM edit while it is ON |
 | **PIN 6** | S1 / Enable-B input, 24 V. Secondary enable: gates Channel B in FUNCTION 196, or controls ramp execution. | Read its state (`PIN6` key) | Toggle it. Note: `ENABLE_B` is a software parameter that only REDEFINES this pin's role — the 24 V signal itself stays hardware |
 | **Analog input type** | Live mode `AINA/AINB` (`MachineData.mode`) — `V` voltage or `C` current loop. Coefficient `x` inside `AIN [a,b,c,x]` (`ainACoefType`) is a *separate* scaling selector. | Set live mode via Basic `AINA` (must match wiring); set coefficient `x` via Advanced 07 | Treat coefficient `x` as live mode (it is not) or as physical selector (it is not) |
 
 UI rules that follow from this:
+
 - Anywhere PIN 15 / PIN 6 appear as controls, render them as **status chips with a PHYSICAL tag**, never as switches.
 - The Inputs/Configure screens must derive their enabled/disabled state ONLY from `machineData.pin15` / `pin6` reads (already done via `isPin15Active`).
 - Mockups/designs must visually separate "APP" (editable over BLE) vs "PHYSICAL" (read-only) — e.g. green APP tag vs red PHYSICAL tag.
@@ -162,7 +163,7 @@ Conventions: buttons full-width h=54 r=12 bold+letterSpacing 1.1 (shared `inheri
 - Save builds per-param commands; grouped families (`LIMIT`, `POL`, `RAMP`, `MIN/MAX`, `DAMPL/DFREQ/PWM`, `CURRENT`, `AIN`) use single grouped write (`GROUP_LIM` etc.) with one `SAVE` + one `D|`. See `ble_command_controller.dart:writeAIN`/`writeRamp` etc.
 - Uses `bleCommandProvider` → `executeAndSave()` + unawaited `setConfigView('EXP')`.
 - Each param command independent except grouped families.
-- Parameter 13 (Dither Frequency) renders as a `DropdownValueCard` (`parameter_widgets.dart`), not `NumericStepperCard` — see the Configure-spec table above and `param_supported_values.dart` (`kDitherFrequencySupportedValues`, 57 values, referenced via `ParamDef.supportedValues` rather than hard-coded in the screen file).
+- Parameter 13 (Dither Frequency) renders as a `DropdownValueCard` (`lib/widgets/parameter_widgets.dart` — since Phase 2 (2026-09) the implementation lives in `lib/widgets/parameter_widgets/dropdown_value.dart`, a `part of` file; the import path callers use is unchanged, see "Phase 2 — parameter_widgets structural split" below), not `NumericStepperCard` — see the Configure-spec table above and `param_supported_values.dart` (`kDitherFrequencySupportedValues`, 57 values, referenced via `ParamDef.supportedValues` rather than hard-coded in the screen file).
 
 ### Selected-parameter persistence & selector scroll position (audit 2026-09)
 
@@ -182,6 +183,7 @@ Technician workflow: **connect → verify safe → configure inputs → tune par
 6. **OTA**: firmware update over BLE.
 
 UI safety rules to preserve in any redesign:
+
 - All EEPROM editing blocked with a red banner while PIN 15 or PIN 6 reads ON.
 - Function change requires an explicit confirm dialog warning about factory-reset of all tuning; only tappable when both enables are OFF.
 - ID and SAVE are persistent footer actions on the Configure page.
@@ -191,7 +193,7 @@ UI safety rules to preserve in any redesign:
 Groups: **STD** = Standard parameters · **EXP** = Expert parameters. "Default" = factory value.
 
 | # | Parameter | Group | W.E.St. command(s) | Range & unit | Default | Widget / notes |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | 01 | Function | — | `FUNCTION` | 195 / 196 | — | Segmented. Interlock: PIN 15 & 6 must be OFF (physical). Confirm dialog: wipes ALL tuning to defaults. After change: ID → SAVE. |
 | 02 | SENS | STD | `SENS` | `ON`/`OFF`/`AUTO` | `AUTO` | AUTO self-resets + rechecks error status every second. ON/AUTO: wire break → output current cut immediately + READY (PIN 5) OFF. Errors acked by cycling PIN 15 OFF→ON. |
 | 03 | CC Mode | EXP | `CCMODE` | `ON`/`OFF` | `OFF` | ON = 10-point linearization curves (PAM DATA), OFF = direct linear mapping. |
@@ -211,3 +213,29 @@ Groups: **STD** = Standard parameters · **EXP** = Expert parameters. "Default" 
 **Global numeric-input UI rule (v2 design, all Configure params):** no sliders anywhere — every quantity uses a text input flanked by −/+ stepper buttons with a permanently visible unit (% / ms / Hz / mA). User types the raw matrix integer directly — no percentage math in the UI. The five percent-scale parameters (LIM 0–2000, MIN 0–6000, MAX 5000–10000, TRIGGER 0–3000, DAMPL 0–3000) show a permanent helper note referencing the % equivalence but the input itself is always the raw value. Ramp/CURRENT accept ms/mA directly via stepper. Inputs validate on commit: parse (comma or dot), clamp to parameter min/max, format to the parameter's decimal count. **PWM and DFREQ are both discrete-value dropdowns, not free-entry steppers** (2026-09: DFREQ converted from a 60–400 Hz stepper to a 57-value dropdown once hardware characterization showed the field isn't actually continuous — see Parameter 13 above and `DropdownValueCard` in `Advanced Config Screen` below) — the app only ever sends one of the firmware-supported exact values for either.
 
 Design mockups: `pvc-config-redesign-v2.html` (current interactive master-layout prototype: dropdown-driven 15 forms, function-context preview, PIN simulator, skeleton fetch, factory-reset dialog — approved design source) · legacy static `pam_configure_screen.html` (+ v1 backup). Pending manager approval before Flutter implementation.
+
+## Phase 2 — parameter_widgets structural split (2026-09)
+
+`lib/widgets/parameter_widgets.dart` was a single ~1,360-line file holding every reusable parameter-form widget (`ParamHeader`, `SegmentedCard`, `NumericStepperCard`, `DropdownValueCard`, `PolarityCard`, `TabbedPanelCard`, `RampRow`, `SafetyBanner`, `HelpCard`, `CurrentLoopGainRow`, plus their private helpers). This was a pure structural refactor — **zero functional, UI, BLE, state, protocol, timing, or hardware behavior change** — splitting it into:
+
+```
+lib/widgets/
+├── parameter_widgets.dart              (library root: imports + `part` directives only)
+└── parameter_widgets/
+    ├── info_widgets.dart               ParamHeader, HelpCard, SafetyBanner
+    ├── segmented_controls.dart         SegmentedCard, PolarityCard, _SegmentedControl
+    ├── buttons.dart                    _StepperButton, _QuickButton (shared across families)
+    ├── numeric_stepper.dart            NumericStepperCard, _NumericStepperCardState
+    ├── dropdown_value.dart             DropdownValueCard
+    ├── tabbed_panel.dart                TabbedPanelCard
+    ├── ramp_row.dart                   RampRow, _RampRowState
+    └── current_loop_gain.dart          CurrentLoopGainRow, _CurrentLoopGainRowState, _SmallButton
+```
+
+**Why `part`/`part of` instead of ordinary per-file imports:** Dart privacy is per-*library*, not per-class. Several private (`_`-prefixed) helper widgets are shared across widget families that now live in different files — e.g. `_StepperButton` is used by both `NumericStepperCard` (numeric_stepper.dart) and `RampRow` (ramp_row.dart); `_QuickButton` is used by both `RampRow` and `CurrentLoopGainRow`. `part`/`part of` keeps every part file inside one Dart library, so those helpers stay exactly as private as before the split with **zero renames**. `parameter_widgets.dart` remains the library root; every part file's first line is `part of '../parameter_widgets.dart';`.
+
+**External API impact: none.** `advanced_config_screen.dart` — the only file in the repo that imports `parameter_widgets.dart` — needed no changes at all, not even its import path. All ten public widget classes kept their exact names, constructors, and fields.
+
+**Verification performed before committing:** repo-wide grep confirmed `advanced_config_screen.dart` is the sole external consumer of every symbol; every one of the 17 classes (10 public + 7 private) in the original file was extracted and diffed byte-for-byte against its new location — all identical (one transcription slip, an escaped `'−'` accidentally pasted as the literal glyph, was caught by this diff and corrected); brace/paren/bracket balance verified per new file; confirmed no part file carries its own `import` statement (imports live only in the root); confirmed the root's 8 `part` directives match the 8 files on disk exactly, one each.
+
+**Do not** reintroduce a flat single-file `parameter_widgets.dart`, and do not add a 9th part file per-parameter (explicitly rejected — groups are by widget family, not by the 15 Configure parameters). If a new reusable parameter-form widget is added, put it in the most fitting existing part file, or add a new `part` file + directive only if it doesn't belong in any existing group.
