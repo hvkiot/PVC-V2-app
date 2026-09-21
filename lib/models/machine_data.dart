@@ -609,15 +609,6 @@ class MachineData {
     );
   }
 
-  /// Returns a copy with a single JSON field updated by name.
-  /// NOTE: dead code — `modifyMachineData` in ble_provider has no callers.
-  /// Kept compiling via the toJson/fromJson round trip.
-  MachineData modifyField(String field, dynamic value) {
-    final json = toJson();
-    json[field] = value;
-    return MachineData.fromJson(json);
-  }
-
   /// Modified factory to keep your CSV-style parsing logic
   /// while utilizing the new JSON structure.
   factory MachineData.fromPacket(String packet) {

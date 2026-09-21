@@ -4,6 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/theme/app_colors.dart';
+import 'package:pvc_v2/utils/coef_normalizer.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
 import 'package:pvc_v2/utils/unit_converter.dart';
 
@@ -145,20 +146,13 @@ class _PamDataScreenState extends ConsumerState<PamDataScreen> {
 
 // --- Extracted sub-widgets with granular selects ---
 
-/// Normalizes a raw PAM AIN coefficient-type token to the app's V/C
-/// display shape. Confirmed hardware behavior: PAM readback does not echo
-/// the token the app writes — it reports "U" for voltage and "I" for
-/// current (write V -> readback U; write C -> readback I). "V"/"U" -> "V";
-/// "C"/"I" -> "C"; anything else (e.g. "None", empty) -> "V". Must stay
-/// identical to the copies in ble_command_controller.dart and
-/// advanced_config_draft_provider.dart, which normalize the same
-/// PAM-readback-vs-editable boundary, and to the ESP's own
-/// normalizeCoefType() in PVC_V2_ESP32.ino (same boundary, firmware side).
-String _normalizeCoefType(String raw) => switch (raw) {
-  'V' || 'U' => 'V',
-  'C' || 'I' => 'C',
-  _ => 'V',
-};
+// Coefficient-type (V/C) display below crosses the same PAM-readback-vs-
+// editable boundary as ble_command_controller.dart's write baseline and
+// advanced_config_draft_provider.dart's draft seeding/dirty check — see the
+// shared normalizeCoefType() in utils/coef_normalizer.dart (single
+// implementation as of 2026-09; this file used to carry its own private
+// copy of the same logic). Also mirrored in firmware as normalizeCoefType()
+// in PVC_V2_ESP32.ino (same boundary, firmware side, not shareable code).
 
 class _InputACard extends ConsumerWidget {
   const _InputACard();
@@ -179,7 +173,7 @@ class _InputACard extends ConsumerWidget {
     // client-side rescaling is done or needed. Source of truth for
     // STD vs. EXP is pamMode, never configView/mode.
     final isExp = data.$3 == 'EXP';
-    final type = isExp ? _normalizeCoefType(data.$4) : data.$2;
+    final type = isExp ? normalizeCoefType(data.$4) : data.$2;
     final unit = type == 'C' ? 'mA' : 'V';
 
     return _SensorCard(
@@ -231,7 +225,7 @@ class _InputBCard extends ConsumerWidget {
     // per-channel type in EXP (see readCycle()'s scaleTypeB), so the
     // numeric value already matches this unit; no client-side rescaling.
     final isExp = data.$3 == 'EXP';
-    final type = isExp ? _normalizeCoefType(data.$4) : data.$2;
+    final type = isExp ? normalizeCoefType(data.$4) : data.$2;
     final unit = type == 'C' ? 'mA' : 'V';
 
     return _SensorCard(

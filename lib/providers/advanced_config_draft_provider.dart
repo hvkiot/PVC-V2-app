@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pvc_v2/models/machine_data.dart';
+import 'package:pvc_v2/utils/coef_normalizer.dart';
 import 'package:pvc_v2/utils/pvc_debug_trace.dart';
 
 // ---------------------------------------------------------------------------
@@ -9,21 +10,13 @@ import 'package:pvc_v2/utils/pvc_debug_trace.dart';
 // perspective).  The draft holds only what the user is currently editing.
 // User edits modify the draft; MachineData is untouched until Save.
 // ---------------------------------------------------------------------------
-
-/// Normalizes a raw PAM AIN coefficient-type token to the app's editable
-/// V/C representation. Confirmed hardware behavior: PAM readback does not
-/// echo the token the app writes — it reports "U" for voltage and "I" for
-/// current (write V -> readback U; write C -> readback I). "V"/"U" -> "V";
-/// "C"/"I" -> "C"; anything else (e.g. "None", empty) -> "V" as a safe
-/// editable default. Must stay identical everywhere this boundary is
-/// crossed (draft seeding, dirty-check, and the write baseline in
-/// ble_command_controller.dart) — see AdvancedConfigDraft.fromMachineData,
-/// hasChangesForSelectedParam, and BleCommandController.writeAIN.
-String _normalizeCoefType(String raw) => switch (raw) {
-  'V' || 'U' => 'V',
-  'C' || 'I' => 'C',
-  _ => 'V',
-};
+//
+// Coefficient-type (V/C) normalization for this file's draft seeding and
+// dirty-check crosses the same PAM-readback-vs-editable boundary as the
+// write baseline in ble_command_controller.dart and the display in
+// pam_data_screen.dart — see the shared normalizeCoefType() in
+// utils/coef_normalizer.dart (single implementation as of 2026-09; this
+// file used to carry its own private copy of the same logic).
 
 class AdvancedConfigDraft {
   // ── Param 01 — Function ─────────────────────────────────────────────────
@@ -158,8 +151,8 @@ class AdvancedConfigDraft {
       // (never from the live/root AIN type, which this draft no longer
       // carries at all). Normalized: MachineData keeps the raw PAM token
       // (U/I/...); the draft — an editable UI copy — only ever holds V/C.
-      ainACoefType: _normalizeCoefType(md.expConfig.ainACoefType),
-      ainBCoefType: _normalizeCoefType(md.expConfig.ainBCoefType),
+      ainACoefType: normalizeCoefType(md.expConfig.ainACoefType),
+      ainBCoefType: normalizeCoefType(md.expConfig.ainBCoefType),
       ainAa: md.expConfig.ainAa,
       ainAb: md.expConfig.ainAb,
       ainAc: md.expConfig.ainAc,
@@ -308,12 +301,12 @@ bool hasChangesForSelectedParam(
       // fromMachineData); md.expConfig.ainACoefType/ainBCoefType stay the
       // raw PAM token (e.g. "U"/"I") — normalize the PAM side here too so a
       // draft that matches PAM (just in the other alphabet) is never
-      // reported dirty. Same _normalizeCoefType helper as the seed and the
+      // reported dirty. Same normalizeCoefType() helper as the seed and the
       // write baseline in ble_command_controller.dart.
       if (draft.ainAa != md.expConfig.ainAa ||
           draft.ainAb != md.expConfig.ainAb ||
           draft.ainAc != md.expConfig.ainAc ||
-          draft.ainACoefType != _normalizeCoefType(md.expConfig.ainACoefType)) {
+          draft.ainACoefType != normalizeCoefType(md.expConfig.ainACoefType)) {
         return true;
       }
       if (mode == '196') {
@@ -321,7 +314,7 @@ bool hasChangesForSelectedParam(
             draft.ainBb != md.expConfig.ainBb ||
             draft.ainBc != md.expConfig.ainBc ||
             draft.ainBCoefType !=
-                _normalizeCoefType(md.expConfig.ainBCoefType)) {
+                normalizeCoefType(md.expConfig.ainBCoefType)) {
           return true;
         }
       }

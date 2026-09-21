@@ -294,10 +294,27 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // machineData/draft are deliberately watched whole here, not narrowed
+    // with select() (audited 2026-09, Phase 1 perf pass): hasChangesForSelectedParam()
+    // and _buildParamForm() below read whichever machineData/draft fields
+    // are relevant to the CURRENTLY SELECTED parameter, and that field set
+    // is different for every one of the 15 params (e.g. selecting '05'
+    // needs limGlobal/limA/limB, selecting '13' needs ditherFreq*). A
+    // select() narrow enough to be a real rebuild win would have to be
+    // recomputed per selectedParam, which would mean not rebuilding when an
+    // unselected-but-still-relevant field changes underneath the currently
+    // shown param — i.e. a stale Save-button/hasChanges bug, not a pure
+    // perf change. That's a real optimization opportunity but it needs a
+    // per-parameter field map (an architecture change), out of scope for
+    // this phase — see AGENTS.md/task history. isBusy IS narrowed below
+    // since it has no such per-param coupling.
     final machineData = ref.watch(machineDataProvider);
     final draft = ref.watch(advancedConfigDraftProvider);
     final draftNotifier = ref.read(advancedConfigDraftProvider.notifier);
-    final isBusy = ref.watch(bleProvider).isBusy;
+    // Only isBusy is used from BleState in this screen — select() so a
+    // rebuild only happens when isBusy itself actually changes, not on
+    // every unrelated BleState field change (scan results, serial log, ...).
+    final isBusy = ref.watch(bleProvider.select((s) => s.isBusy));
     final selectedParam = ref.watch(selectedAdvancedConfigParamProvider);
 
     // Seed draft from machineData on first real update after connection.
@@ -323,11 +340,32 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     ) {
       pvcTrace('PAM_MODE_LISTENER', '$prev -> $next');
       if (prev != null && prev != next && machineData.pamConnected) {
-        pvcTrace('DRAFT_SEED_SCHEDULED', '');
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            draftNotifier.seedFromMachineData(ref.read(machineDataProvider));
+          if (!mounted) return;
+          // Guard added 2026-09 (Phase 1): re-seeding overwrites the WHOLE
+          // draft from MachineData, which would silently discard an
+          // in-progress edit on the currently-viewed parameter if PAM_MODE
+          // flips mid-edit. Reuses the existing hasChangesForSelectedParam
+          // dirty-check (the same one the Save button's `hasChanges` uses)
+          // rather than building new dirty-tracking — if the parameter the
+          // user is currently looking at has unsaved changes, skip this
+          // reseed and leave the draft alone; the listener itself, and every
+          // OTHER reseed path (the initial-connect seed above, and any
+          // future explicit "sync from hardware" action), are untouched and
+          // still reseed normally.
+          final freshMachineData = ref.read(machineDataProvider);
+          final hasUnsavedEdits = hasChangesForSelectedParam(
+            ref.read(selectedAdvancedConfigParamProvider),
+            freshMachineData.func,
+            ref.read(advancedConfigDraftProvider),
+            freshMachineData,
+          );
+          if (hasUnsavedEdits) {
+            pvcTrace('DRAFT_SEED_SKIPPED_UNSAVED', 'pamMode $prev -> $next');
+            return;
           }
+          pvcTrace('DRAFT_SEED_SCHEDULED', '');
+          draftNotifier.seedFromMachineData(freshMachineData);
         });
       }
     });

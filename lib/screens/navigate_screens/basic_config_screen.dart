@@ -171,16 +171,39 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
   // ── Build ──────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final machineData = ref.watch(machineDataProvider);
+    // Narrowed to exactly the 7 MachineData fields this build() actually
+    // reads (audited 2026-09, Phase 1 perf pass) — a rebuild now only
+    // happens when one of these specific values changes, not on every
+    // MachineData update (e.g. Advanced-only expConfig fields no longer
+    // trigger a rebuild here). `mdMode` is the live root AINA V/C field
+    // (MachineData.mode) — kept a distinct name from the existing `mode`
+    // local below (which holds `func`, i.e. FUNCTION 195/196) so the two
+    // very different concepts stay visually distinct, not just type-safe.
+    final (func, pin15, pin6, mdMode, coilCurrent, coilACurrent, coilBCurrent) =
+        ref.watch(
+          machineDataProvider.select(
+            (d) => (
+              d.func,
+              d.pin15,
+              d.pin6,
+              d.mode,
+              d.coilCurrent,
+              d.coilACurrent,
+              d.coilBCurrent,
+            ),
+          ),
+        );
     final configState = ref.watch(configTabProvider);
     final inputsState = ref.watch(inputsTabProvider);
     final theme = Theme.of(context);
 
-    final String mode = machineData.func;
-    final bool isPinActive = machineData.pin15 || machineData.pin6;
-    final bool isBusy = ref.watch(bleProvider).isBusy;
+    final String mode = func;
+    final bool isPinActive = pin15 || pin6;
+    // Only isBusy is used from BleState in this screen — select() so a
+    // rebuild only happens when isBusy itself actually changes.
+    final bool isBusy = ref.watch(bleProvider.select((s) => s.isBusy));
 
-    final String displayMode = inputsState.selectedMode ?? machineData.func;
+    final String displayMode = inputsState.selectedMode ?? func;
 
     // Reset currents to 1000 mA firmware default when UI mode changes.
     ref.listen<String?>(inputsTabProvider.select((s) => s.selectedMode), (
@@ -211,44 +234,44 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
     // ── Display values ──────────────────────────────────────────────────────
     final String displayInput =
         inputsState.selectedInput1 ??
-        (machineData.mode == 'V' ? 'Voltage' : 'Current');
+        (mdMode == 'V' ? 'Voltage' : 'Current');
 
     // Current: draft wins, hardware is fallback.
     final double displayCurrent;
     if (displayMode == '195') {
       displayCurrent = configState.coilCurrent > 0
           ? configState.coilCurrent
-          : machineData.coilCurrent;
+          : coilCurrent;
     } else {
       displayCurrent = configState.coilACurrent > 0
           ? configState.coilACurrent
-          : machineData.coilACurrent;
+          : coilACurrent;
     }
 
     // ── Dirty check ─────────────────────────────────────────────────────────
     bool isDirty = false;
     if (inputsState.selectedMode != null &&
-        inputsState.selectedMode != machineData.func) {
+        inputsState.selectedMode != func) {
       isDirty = true;
     }
     if (inputsState.selectedInput1 != null) {
-      final currentInput = machineData.mode == 'V' ? 'Voltage' : 'Current';
+      final currentInput = mdMode == 'V' ? 'Voltage' : 'Current';
       if (inputsState.selectedInput1 != currentInput) isDirty = true;
     }
     if (displayMode == '195') {
       if (configState.coilCurrent > 0 &&
-          displayCurrent.round() != machineData.coilCurrent.round()) {
+          displayCurrent.round() != coilCurrent.round()) {
         isDirty = true;
       }
     } else {
       final checkA = configState.coilACurrent > 0
           ? configState.coilACurrent
-          : machineData.coilACurrent;
+          : coilACurrent;
       final checkB = configState.coilBCurrent > 0
           ? configState.coilBCurrent
-          : machineData.coilBCurrent;
-      if (checkA.round() != machineData.coilACurrent.round() ||
-          checkB.round() != machineData.coilBCurrent.round()) {
+          : coilBCurrent;
+      if (checkA.round() != coilACurrent.round() ||
+          checkB.round() != coilBCurrent.round()) {
         isDirty = true;
       }
     }
@@ -296,7 +319,7 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
                     child: Text(
-                      "Device is currently enabled. Disable ${activePinsLabel(machineData.pin15, machineData.pin6)} to modify EEPROM settings",
+                      "Device is currently enabled. Disable ${activePinsLabel(pin15, pin6)} to modify EEPROM settings",
                       textAlign: TextAlign.center,
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: theme.colorScheme.error,
@@ -379,7 +402,7 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
                     title: 'COIL A Output Current',
                     currentValue: configState.coilACurrent > 0
                         ? configState.coilACurrent
-                        : machineData.coilACurrent,
+                        : coilACurrent,
                     onChanged: (v) {
                       if (v != null) {
                         ref.read(configTabProvider.notifier).setCoilACurrent(v);
@@ -396,7 +419,7 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
                     title: 'COIL B Output Current',
                     currentValue: configState.coilBCurrent > 0
                         ? configState.coilBCurrent
-                        : machineData.coilBCurrent,
+                        : coilBCurrent,
                     onChanged: (v) {
                       if (v != null) {
                         ref.read(configTabProvider.notifier).setCoilBCurrent(v);

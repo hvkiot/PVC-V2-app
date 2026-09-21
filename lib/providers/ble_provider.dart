@@ -270,19 +270,6 @@ class BleNotifier extends Notifier<BleState> {
                   (value) {
                     final decoded = utf8.decode(value, allowMalformed: true);
                     logger.d("Received BLE Data: $decoded");
-                    // Debug-only: first point a raw packet is received, before
-                    // any F| chunk reassembly / D|/L| parsing below. Packet
-                    // type (D/F/L) is included as the trace sub-tag when the
-                    // packet carries one of the known prefixes; legacy
-                    // (unprefixed) packets trace without a sub-tag.
-                    // final rxSub = decoded.startsWith('D|')
-                    //     ? 'D'
-                    //     : decoded.startsWith('F|')
-                    //     ? 'F'
-                    //     : decoded.startsWith('L|')
-                    //     ? 'L'
-                    //     : null;
-                    // pvcTrace("BLE_RX", decoded, sub: rxSub);
 
                     // ---- F| chunk reassembly (temporary debug) ----
                     // Wire format: F|<snapshotId>|<chunkIndex>/<totalChunks>|<payload>
@@ -598,13 +585,6 @@ class BleNotifier extends Notifier<BleState> {
     if (state.errorMessage != null) {
       state = state.copyWith(clearError: true);
     }
-  }
-
-  /// Modify a single field in MachineData by JSON key name.
-  void modifyMachineData(String field, dynamic value) {
-    state = state.copyWith(
-      machineData: state.machineData.modifyField(field, value),
-    );
   }
 }
 

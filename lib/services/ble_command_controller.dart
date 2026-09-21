@@ -5,20 +5,14 @@ import 'package:pvc_v2/models/machine_data.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/providers/processing_overlay_provider.dart';
+import 'package:pvc_v2/utils/coef_normalizer.dart';
 
-/// Normalizes a raw PAM AIN coefficient-type token to the app's editable
-/// V/C representation. Confirmed hardware behavior: PAM readback does not
-/// echo the token the app writes — it reports "U" for voltage and "I" for
-/// current (write V -> readback U; write C -> readback I). "V"/"U" -> "V";
-/// "C"/"I" -> "C"; anything else (e.g. "None", empty) -> "V". Must stay
-/// identical to the copy in advanced_config_draft_provider.dart, which
-/// normalizes the same PAM-readback-vs-editable-UI boundary for draft
-/// seeding and the dirty check.
-String _normalizeCoefType(String raw) => switch (raw) {
-  'V' || 'U' => 'V',
-  'C' || 'I' => 'C',
-  _ => 'V',
-};
+// Coefficient-type (V/C) normalization below (write-baseline comparisons)
+// crosses the same PAM-readback-vs-editable boundary as draft seeding/dirty
+// check in advanced_config_draft_provider.dart and the display in
+// pam_data_screen.dart — see the shared normalizeCoefType() in
+// utils/coef_normalizer.dart (single implementation as of 2026-09; this
+// file used to carry its own private copy of the same logic).
 
 /// Shared BLE command controller used by both basic (STD) and advanced screens.
 ///
@@ -254,12 +248,12 @@ class BleCommandController {
           a != _md.expConfig.ainAa ||
           b != _md.expConfig.ainAb ||
           c != _md.expConfig.ainAc ||
-          type != _normalizeCoefType(_md.expConfig.ainACoefType);
+          type != normalizeCoefType(_md.expConfig.ainACoefType);
       final bChanged =
           bA != _md.expConfig.ainBa ||
           bB != _md.expConfig.ainBb ||
           bC != _md.expConfig.ainBc ||
-          bType != _normalizeCoefType(_md.expConfig.ainBCoefType);
+          bType != normalizeCoefType(_md.expConfig.ainBCoefType);
       if (aChanged && bChanged) {
         return execute(['AIN196:A:$a:$b:$c:$type:B:$bA:$bB:$bC:$bType']);
       } else if (aChanged) {
@@ -279,8 +273,8 @@ class BleCommandController {
     // Normalize the raw PAM token (e.g. "U"/"I") to editable V/C before
     // comparing against [type], which is always V/C.
     final baseType = channel == 'A'
-        ? _normalizeCoefType(_md.expConfig.ainACoefType)
-        : _normalizeCoefType(_md.expConfig.ainBCoefType);
+        ? normalizeCoefType(_md.expConfig.ainACoefType)
+        : normalizeCoefType(_md.expConfig.ainBCoefType);
     if (a == baseA && b == baseB && c == baseC && type == baseType) {
       return execute(const []);
     }
