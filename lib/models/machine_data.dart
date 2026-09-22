@@ -92,9 +92,6 @@ const _expGroupKeys = <String>{
   ..._cfgStringKeys,
 };
 
-/// Default view for a device that has never reported/been saved as EXP.
-const _defaultConfigView = 'STD';
-
 /// Returns the raw string value for [wireKey] if present, else null.
 String? _strOf(Map<String, String> raw, String wireKey) => raw[wireKey];
 
@@ -492,32 +489,29 @@ class MachineData {
   @JsonKey(name: 'PAM_CONNECTED')
   final bool pamConnected;
 
-  /// App-preference cache (the ESP32's CONFIG_VIEW in the D|/F| protocol):
-  /// "STD" or "EXP", recording which config screen was last saved from. NOT
-  /// PAM's own MODE STD/EXP register (see [pamMode] for that) and NO LONGER
-  /// what decides which config screen ([ConfigScreen]) is shown — that
-  /// authority is [pamMode]. This field's one remaining job is internal:
-  /// routing which section (std/exp) a full (F|) snapshot rebuilds fresh
-  /// vs. carries forward (see the packet-merge logic below), so a save on
-  /// one screen can never clobber the other screen's locally-cached values.
-  /// Defaults to "STD".
-  @JsonKey(name: 'CONFIG_VIEW')
-  final String configView;
-
   /// The ACTUAL live PAM operating MODE (`PAM_MODE` wire key): "STD" or
-  /// "EXP", read back from PAM's own MODE register on the ESP — and the
-  /// single source of truth for which config screen ([ConfigScreen]) is
-  /// shown. Changes ONLY via an explicit Basic/Advanced drawer selection
-  /// (see [BleCommandController.setPamMode] / CustomDrawer's
+  /// "EXP", read back from PAM's own MODE register on the ESP — the single
+  /// source of truth for which config screen ([ConfigScreen]) is shown, AND
+  /// the single source of truth for which section (std/exp) a full (F|)
+  /// snapshot rebuilds fresh vs. carries forward in [mergeFromPacket].
+  /// Changes ONLY via an explicit Basic/Advanced drawer selection (see
+  /// [BleCommandController.setPamMode] / CustomDrawer's
   /// `_ConfigViewSelector`) — never automatically on connect/reconnect, and
   /// never as a side effect of saving Basic/Advanced Config parameters. This
-  /// is distinct from BOTH [mode] (the AINA live V/C input type, wire key
-  /// `MODE`) AND [configView] (the now UI-selection-inert app preference
-  /// cache, wire key `CONFIG_VIEW`) — none of the three should ever be
-  /// derived from one another. Some ESP operations (AIN coefficient
-  /// read/write) temporarily switch PAM into EXP and back; the ESP only
-  /// reports the settled final value here, never a transient mid-operation
-  /// one. Defaults to "STD" until the first real reading arrives.
+  /// is distinct from [mode] (the AINA live V/C input type, wire key
+  /// `MODE`) — the two should never be derived from one another. Some ESP
+  /// operations (AIN coefficient read/write) temporarily switch PAM into EXP
+  /// and back; the ESP only reports the settled final value here, never a
+  /// transient mid-operation one. Defaults to "STD" until the first real
+  /// reading arrives.
+  ///
+  /// Historical note (Phase 13, 2026-09): this field's routing role was
+  /// previously shared with a wire-level `CONFIG_VIEW` app-preference cache
+  /// (Phase 12 made `pamMode` authoritative; Phase 13 removed `CONFIG_VIEW`
+  /// completely — it no longer exists on the wire, in `MachineData`, in the
+  /// ESP firmware, or in the command controller). `pamMode` is now the only
+  /// state used for Basic/Advanced screen routing and F| active-section
+  /// selection.
   @JsonKey(name: 'PAM_MODE')
   final String pamMode;
 
@@ -545,7 +539,6 @@ class MachineData {
     this.voltage = '',
     this.transition = false,
     this.pamConnected = false,
-    this.configView = _defaultConfigView,
     this.pamMode = 'STD',
     this.stdConfig = const StdConfig(),
     this.expConfig = const ExpConfig(),
@@ -559,8 +552,8 @@ class MachineData {
   Map<String, dynamic> toJson() => _$MachineDataToJson(this);
 
   /// Returns a copy with the given fields replaced. Only used by callers
-  /// that need to flip [configView]/[stdConfig]/[expConfig] without a full
-  /// packet round trip.
+  /// that need to flip [stdConfig]/[expConfig] without a full packet round
+  /// trip.
   MachineData copyWith({
     String? func,
     double? inputA,
@@ -579,7 +572,6 @@ class MachineData {
     String? voltage,
     bool? transition,
     bool? pamConnected,
-    String? configView,
     String? pamMode,
     StdConfig? stdConfig,
     ExpConfig? expConfig,
@@ -602,7 +594,6 @@ class MachineData {
       voltage: voltage ?? this.voltage,
       transition: transition ?? this.transition,
       pamConnected: pamConnected ?? this.pamConnected,
-      configView: configView ?? this.configView,
       pamMode: pamMode ?? this.pamMode,
       stdConfig: stdConfig ?? this.stdConfig,
       expConfig: expConfig ?? this.expConfig,
@@ -645,7 +636,7 @@ class MachineData {
     }
 
     // F| full snapshot replaces everything EXCEPT the config section that is
-    // not the packet's active CONFIG_VIEW, which is carried forward so one
+    // not the packet's active PAM_MODE, which is carried forward so one
     // view saving can never clobber the other view's data.
     final isFull = prefix == 'F|';
     final currentOrNew = current ?? const MachineData();
@@ -661,19 +652,21 @@ class MachineData {
         }
       }
 
-      // Resolve CONFIG_VIEW: always carried by the ESP's F| builder; D|/L|
-      // carry it only when DF_CONFIG_VIEW is dirty, so fall back to the
-      // currently-resolved view (F| without it defaults to STD, matching the
-      // pre-CONFIG_VIEW behavior of placing full snapshots in the STD view).
-      final wireConfigView = raw.remove('CONFIG_VIEW');
-      final configView =
-          wireConfigView ?? (isFull ? _defaultConfigView : rootBase.configView);
+      // Resolve PAM_MODE: prefer the value carried in THIS packet (so a
+      // same-packet PAM_MODE transition is honored immediately, never a
+      // stale prior value), else fall back to rootBase.pamMode — which is
+      // already the MachineData default ("STD") for a full snapshot that
+      // omits PAM_MODE (rootBase is a fresh const MachineData() when
+      // isFull), and the carried-forward value for D|/L|.
+      final resolvedPamMode = _strOf(raw, 'PAM_MODE') ?? rootBase.pamMode;
 
       final stdCarry = current?.stdConfig ?? const StdConfig();
       final expCarry = current?.expConfig ?? const ExpConfig();
 
-      final bool stdActive = isFull && configView == 'STD';
-      final bool expActive = isFull && configView == 'EXP';
+      // Active-section selector for full (F|) snapshots — PAM_MODE is the
+      // single source of truth (CONFIG_VIEW was removed in Phase 13).
+      final bool stdActive = isFull && resolvedPamMode == 'STD';
+      final bool expActive = isFull && resolvedPamMode == 'EXP';
       final bool stdDelta = !isFull && _hasAny(raw, _stdGroupKeys);
       final bool expDelta = !isFull && _hasAny(raw, _expGroupKeys);
 
@@ -721,12 +714,10 @@ class MachineData {
         pamConnected: _boolOf(raw, const [
           'PAM_CONNECTED',
         ], rootBase.pamConnected),
-        configView: configView,
-        // Actual PAM MODE (STD/EXP) — a plain root-level scalar like
-        // voltage/transition above: NOT part of the CONFIG_VIEW-routed
-        // std/exp carry-forward logic, and NEVER derived from MODE (AINA
-        // V/C) or from configView.
-        pamMode: _strOf(raw, 'PAM_MODE') ?? rootBase.pamMode,
+        // Actual PAM MODE (STD/EXP) — the sole active-section selector for
+        // F| carry-forward routing above (resolvedPamMode, reused here to
+        // avoid re-deriving it); never derived from MODE (AINA V/C).
+        pamMode: resolvedPamMode,
         stdConfig: stdConfig,
         expConfig: expConfig,
       );
@@ -825,34 +816,17 @@ class MachineData {
       oldData.expConfig.ditherAmpGlobal,
       newData.expConfig.ditherAmpGlobal,
     );
-    t(
-      'DAMPL_A',
-      oldData.expConfig.ditherAmpA,
-      newData.expConfig.ditherAmpA,
-    );
-    t(
-      'DAMPL_B',
-      oldData.expConfig.ditherAmpB,
-      newData.expConfig.ditherAmpB,
-    );
+    t('DAMPL_A', oldData.expConfig.ditherAmpA, newData.expConfig.ditherAmpA);
+    t('DAMPL_B', oldData.expConfig.ditherAmpB, newData.expConfig.ditherAmpB);
     t(
       'DFREQ_GLOBAL',
       oldData.expConfig.ditherFreqGlobal,
       newData.expConfig.ditherFreqGlobal,
     );
-    t(
-      'DFREQ_A',
-      oldData.expConfig.ditherFreqA,
-      newData.expConfig.ditherFreqA,
-    );
-    t(
-      'DFREQ_B',
-      oldData.expConfig.ditherFreqB,
-      newData.expConfig.ditherFreqB,
-    );
+    t('DFREQ_A', oldData.expConfig.ditherFreqA, newData.expConfig.ditherFreqA);
+    t('DFREQ_B', oldData.expConfig.ditherFreqB, newData.expConfig.ditherFreqB);
     t('PWM_GLOBAL', oldData.expConfig.pwmGlobal, newData.expConfig.pwmGlobal);
     t('PWM_A', oldData.expConfig.pwmA, newData.expConfig.pwmA);
     t('PWM_B', oldData.expConfig.pwmB, newData.expConfig.pwmB);
-    t('CONFIG_VIEW', oldData.configView, newData.configView);
   }
 }

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
@@ -156,13 +154,10 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
       configNotifier.reset(0.0, 0.0, 0.0);
       inputsNotifier.reset();
       messageNotifier.showSuccess("Settings updated successfully");
-      // Best-effort: record that Basic Config is the last-saved screen.
-      // NOTE: no longer what decides which screen ConfigScreen reopens on
-      // reconnect (that's MachineData.pamMode now) — configView's remaining
-      // job is the F|-snapshot active/inactive section merge routing in
-      // MachineData's packet parser. Not awaited — an app-preference cache,
-      // not part of the save's success/failure path.
-      unawaited(bleCommand.setConfigView('STD'));
+      // Phase 13: CONFIG_VIEW removed entirely. Which screen ConfigScreen
+      // reopens on reconnect, and F|-snapshot active-section routing, are
+      // both driven purely by MachineData.pamMode — no app-preference write
+      // is needed here.
     } else {
       messageNotifier.showError("Failed to save settings");
     }
@@ -179,20 +174,27 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
     // (MachineData.mode) — kept a distinct name from the existing `mode`
     // local below (which holds `func`, i.e. FUNCTION 195/196) so the two
     // very different concepts stay visually distinct, not just type-safe.
-    final (func, pin15, pin6, mdMode, coilCurrent, coilACurrent, coilBCurrent) =
-        ref.watch(
-          machineDataProvider.select(
-            (d) => (
-              d.func,
-              d.pin15,
-              d.pin6,
-              d.mode,
-              d.coilCurrent,
-              d.coilACurrent,
-              d.coilBCurrent,
-            ),
-          ),
-        );
+    final (
+      func,
+      pin15,
+      pin6,
+      mdMode,
+      coilCurrent,
+      coilACurrent,
+      coilBCurrent,
+    ) = ref.watch(
+      machineDataProvider.select(
+        (d) => (
+          d.func,
+          d.pin15,
+          d.pin6,
+          d.mode,
+          d.coilCurrent,
+          d.coilACurrent,
+          d.coilBCurrent,
+        ),
+      ),
+    );
     final configState = ref.watch(configTabProvider);
     final inputsState = ref.watch(inputsTabProvider);
     final theme = Theme.of(context);
@@ -233,8 +235,7 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
 
     // ── Display values ──────────────────────────────────────────────────────
     final String displayInput =
-        inputsState.selectedInput1 ??
-        (mdMode == 'V' ? 'Voltage' : 'Current');
+        inputsState.selectedInput1 ?? (mdMode == 'V' ? 'Voltage' : 'Current');
 
     // Current: draft wins, hardware is fallback.
     final double displayCurrent;
@@ -250,8 +251,7 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
 
     // ── Dirty check ─────────────────────────────────────────────────────────
     bool isDirty = false;
-    if (inputsState.selectedMode != null &&
-        inputsState.selectedMode != func) {
+    if (inputsState.selectedMode != null && inputsState.selectedMode != func) {
       isDirty = true;
     }
     if (inputsState.selectedInput1 != null) {

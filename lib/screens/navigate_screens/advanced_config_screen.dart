@@ -165,7 +165,6 @@ class AdvancedConfigScreen extends ConsumerStatefulWidget {
 class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   bool _isSynchronizing = false;
   bool _hasSeeded = false;
-  bool _hasRequestedConfigViewExp = false;
 
   // ── Save ──────────────────────────────────────────────────────────────────
   Future<void> _saveConfig() async {
@@ -427,18 +426,10 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
       }
     });
 
-    // One-time CONFIG_VIEW=EXP on Advanced entry — app routing only, not PAM_MODE.
-    // Keep CONFIG_VIEW in architecture (F-merge routing) but do not send after each save.
-    // Guard ensures already-EXP does not retransmit. At most once per screen instance.
-    if (!_hasRequestedConfigViewExp &&
-        machineData.pamConnected &&
-        machineData.configView != 'EXP') {
-      _hasRequestedConfigViewExp = true;
-      final expCmd = ref.read(bleCommandProvider);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) unawaited(expCmd.setConfigView('EXP'));
-      });
-    }
+    // Phase 13: CONFIG_VIEW removed entirely. This screen is only ever
+    // shown when MachineData.pamMode == 'EXP' (see ConfigScreen's routing),
+    // which is already the single source of truth — no app-preference
+    // write is needed on entry.
 
     final String mode = machineData.func;
     final bool isPinActive = machineData.pin15 || machineData.pin6;

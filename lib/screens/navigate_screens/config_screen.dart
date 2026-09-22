@@ -14,10 +14,10 @@ import 'package:pvc_v2/screens/navigate_screens/basic_config_screen.dart';
 /// which config UI is active. It changes ONLY via an explicit Basic/Advanced
 /// drawer selection (BleCommandController.setPamMode()), never automatically
 /// on connect/reconnect or as a side effect of saving Basic/Advanced Config
-/// parameters. This is intentionally NOT MachineData.configView (the old,
-/// now UI-inert app-preference cache — see its doc comment for its one
-/// remaining purpose) and NOT the live AINA V/C input type
-/// (MachineData.mode, wire key MODE).
+/// parameters. This is NOT the live AINA V/C input type (MachineData.mode,
+/// wire key MODE). (Phase 13, 2026-09: the old MachineData.configView
+/// app-preference cache this comment used to distinguish `pamMode` from has
+/// been removed entirely — `pamMode` is now the only routing state.)
 ///
 /// This widget is intentionally NOT a Scaffold: BasicConfigScreen and
 /// AdvancedConfigScreen each already return their own top-level Scaffold

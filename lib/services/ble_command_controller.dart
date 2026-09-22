@@ -53,10 +53,11 @@ import 'package:pvc_v2/utils/coef_normalizer.dart';
 // ain_coefficient_writes.dart) `normalizeCoefType()` directly, without
 // their own imports.
 //
-// Public symbols (unchanged since before the split): BleCommandController
-// (class), bleCommandProvider, and every existing public method —
-// execute, saveToEeprom, executeAndSave, setConfigView, setPamMode,
-// isBusy, ackTimeout/doneTimeoutFunctionChange/doneTimeoutParameterChange,
+// Public symbols (unchanged since before the split, except setConfigView —
+// removed in Phase 13, 2026-09, see below): BleCommandController (class),
+// bleCommandProvider, and every existing public method — execute,
+// saveToEeprom, executeAndSave, setPamMode, isBusy,
+// ackTimeout/doneTimeoutFunctionChange/doneTimeoutParameterChange,
 // and all 18 parameter-write methods (writeFunction .. writeAcceleration).
 // advanced_config_screen.dart, basic_config_screen.dart, and
 // custom_drawer.dart — the only external consumers — needed zero changes.
@@ -207,30 +208,12 @@ class BleCommandController
     return writeOk;
   }
 
-  /// App-only preference cache — tells the ESP which config screen (Basic
-  /// or Advanced) just saved successfully, so MachineData.configView (and
-  /// the device's own RAM-only cache) reflects it. NOT a PAM write — no PAM
-  /// access, no SAVE, no transition — see CMD_SET_CONFIG_VIEW / configView
-  /// in the ESP firmware. NOTE: configView is no longer the authority for
-  /// which config screen is shown (see [MachineData.pamMode] /
-  /// [setPamMode] for that) — this is kept only for its remaining purpose,
-  /// the F|-snapshot active/inactive section merge routing in
-  /// MachineData's packet parser (so saving one screen's parameters can
-  /// never clobber the other screen's locally-cached values). [view] must
-  /// be exactly 'STD' (Basic) or 'EXP' (Advanced).
-  Future<bool> setConfigView(String view) {
-    // Bypasses the busy-guard entirely: CONFIG_VIEW is app-side preference
-    // state, not a PAM transition, so it must never be dropped by (or
-    // contribute to) the busy lifecycle. See writeRawToCharacteristic().
-    return _ble.writeRawToCharacteristic('CONFIG_VIEW:$view');
-  }
-
   /// Sets the ACTUAL PAM hardware MODE (STD/EXP) — the single source of
   /// truth for which config screen (Basic/Advanced) PVC shows (see
   /// [MachineData.pamMode] / ConfigScreen). Only ever called from an
   /// explicit user action (the drawer's Basic/Advanced selector) — never
-  /// automatically on connect/reconnect. Unlike [setConfigView], this IS a
-  /// real PAM write: the ESP performs MODE STD/EXP -> SAVE as one atomic
+  /// automatically on connect/reconnect. This IS a real PAM write: the ESP
+  /// performs MODE STD/EXP -> SAVE as one atomic
   /// transaction (see handleSetPamMode() in commands.cpp), reusing the same
   /// busy-guard + TRANSITION:True/...  /TRANSITION:False sequencing every
   /// other PAM-touching command already goes through via [execute] — no

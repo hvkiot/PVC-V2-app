@@ -181,7 +181,7 @@ class _InputACard extends ConsumerWidget {
     // scales WA by that same per-channel type in EXP (see readCycle()'s
     // scaleTypeA), so the numeric value already matches this unit; no
     // client-side rescaling is done or needed. Source of truth for
-    // STD vs. EXP is pamMode, never configView/mode.
+    // STD vs. EXP is pamMode, never mode (configView was removed in Phase 13).
     final isExp = data.$3 == 'EXP';
     final type = isExp ? normalizeCoefType(data.$4) : data.$2;
     final unit = type == 'C' ? 'mA' : 'V';

@@ -18,6 +18,15 @@ class BleState {
   final List<String> serialLog;
   final bool isBusy;
   final MachineData machineData;
+  // True once the initial post-connect F| snapshot has been requested AND
+  // fully reassembled/parsed/merged into machineData for the CURRENT
+  // connection. Distinct from machineData.pamConnected (a wire-level
+  // PAM_CONNECTED value that can carry over stale from a previous
+  // connection) and from connectedDevice (only reflects the BLE link, not
+  // whether a config snapshot has arrived yet). Reset to false on every new
+  // connect attempt and on disconnect/cleanup; set true only when the first
+  // F| snapshot for the current connection finishes reassembling.
+  final bool initialSyncComplete;
 
   BleState({
     this.isScanning = false,
@@ -29,6 +38,7 @@ class BleState {
     this.serialLog = const [],
     this.isBusy = false,
     this.machineData = const MachineData(),
+    this.initialSyncComplete = false,
   });
 
   BleState copyWith({
@@ -43,6 +53,7 @@ class BleState {
     List<String>? serialLog,
     bool? isBusy,
     MachineData? machineData,
+    bool? initialSyncComplete,
   }) {
     return BleState(
       isScanning: isScanning ?? this.isScanning,
@@ -56,6 +67,7 @@ class BleState {
       serialLog: serialLog ?? this.serialLog,
       isBusy: isBusy ?? this.isBusy,
       machineData: machineData ?? this.machineData,
+      initialSyncComplete: initialSyncComplete ?? this.initialSyncComplete,
     );
   }
 }
@@ -128,7 +140,10 @@ class BleNotifier extends Notifier<BleState> {
       state.connectedDevice!.disconnect();
     }
     // Reset machineData to default on full cleanup
-    state = state.copyWith(machineData: const MachineData());
+    state = state.copyWith(
+      machineData: const MachineData(),
+      initialSyncComplete: false,
+    );
   }
 
   Future<bool> scanDevices() async {
@@ -160,7 +175,7 @@ class BleNotifier extends Notifier<BleState> {
 
   Future<bool> connectToDevice(BluetoothDevice device) async {
     try {
-      state = state.copyWith(isConnecting: true);
+      state = state.copyWith(isConnecting: true, initialSyncComplete: false);
       await FlutterBluePlus.stopScan();
 
       // Small delay to let the Bluetooth stack settle after stopping scan
@@ -214,6 +229,7 @@ class BleNotifier extends Notifier<BleState> {
         serialLog: [],
         isBusy: false,
         machineData: const MachineData(),
+        initialSyncComplete: false,
       );
       return true;
     }
@@ -344,6 +360,7 @@ class BleNotifier extends Notifier<BleState> {
                         state = state.copyWith(
                           characteristicValue: reconstructed,
                           machineData: merged,
+                          initialSyncComplete: true,
                         );
                         if (reconstructed.contains('TRANSITION:False')) {
                           setBusy(false);

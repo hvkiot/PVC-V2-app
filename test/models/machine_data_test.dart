@@ -276,49 +276,102 @@ void main() {
     });
   });
 
-  group('MachineData configView/stdConfig/expConfig routing', () {
-    test('F| STD rebuilds stdConfig and does not touch expConfig', () {
+  group('MachineData PAM_MODE/stdConfig/expConfig routing', () {
+    // Phase 13: CONFIG_VIEW has been removed entirely — PAM_MODE is the
+    // single, sole source of truth for which section a full (F|) snapshot
+    // rebuilds fresh vs. carries forward, for Basic/Advanced screen
+    // routing, and for PAM hardware MODE itself. There is no other
+    // mode-routing state left to test against.
+    test(
+      'F| PAM_MODE=STD rebuilds stdConfig active, expConfig preserved',
+      () {
+        final data = MachineData.mergeFromPacket(
+          'F|FUNC:196,MODE:C,CURRENT_S:1000,CURRENT_A:500,CURRENT_B:500,'
+          'PAM_MODE:STD',
+          MachineData(),
+        );
+
+        expect(data.pamMode, 'STD');
+        expect(data.func, '196');
+        expect(data.stdConfig.func, '196');
+        expect(data.stdConfig.mode, 'C');
+        expect(data.stdConfig.coilCurrent, 1000.0);
+        expect(data.stdConfig.coilACurrent, 500.0);
+        expect(data.stdConfig.coilBCurrent, 500.0);
+        // expConfig untouched (seed = fresh defaults, nothing to preserve
+        // from yet, but proves it is not clobbered by the STD-active build)
+        expect(data.expConfig.sens, 'AUTO');
+        expect(data.expConfig.limA, 0);
+      },
+    );
+
+    test(
+      'F| PAM_MODE=EXP rebuilds expConfig active, stdConfig preserved',
+      () {
+        final data = MachineData.mergeFromPacket(
+          'F|FUNC:196,MODE:C,SENS:MANUAL,POL_A:-,PAM_MODE:EXP',
+          MachineData(),
+        );
+
+        expect(data.pamMode, 'EXP');
+        expect(data.func, '196');
+        expect(data.expConfig.sens, 'MANUAL');
+        expect(data.expConfig.polA, '-');
+        // stdConfig not part of this F| → stays at defaults
+        expect(data.stdConfig.func, '195');
+        expect(data.stdConfig.coilCurrent, 0.0);
+      },
+    );
+
+    test('F| with PAM_MODE absent defaults to STD active (no CONFIG_VIEW '
+        'to fall back on)', () {
+      // Required coverage items 3 & 4: since CONFIG_VIEW no longer exists on
+      // the wire at all, this IS "F| PAM_MODE=STD with no CONFIG_VIEW" and
+      // "F| PAM_MODE=EXP with no CONFIG_VIEW" by construction. This test
+      // additionally proves the class-default fallback (rootBase is always
+      // a fresh const MachineData() for F|) still resolves to 'STD' with no
+      // legacy field left to consult.
       final data = MachineData.mergeFromPacket(
-        'F|FUNC:196,MODE:C,CURRENT_S:1000,CURRENT_A:500,CURRENT_B:500,'
-        'CONFIG_VIEW:STD',
+        'F|FUNC:195,MODE:V,CURRENT_S:250',
         MachineData(),
       );
 
-      expect(data.configView, 'STD');
-      expect(data.func, '196');
-      expect(data.stdConfig.func, '196');
-      expect(data.stdConfig.mode, 'C');
-      expect(data.stdConfig.coilCurrent, 1000.0);
-      expect(data.stdConfig.coilACurrent, 500.0);
-      expect(data.stdConfig.coilBCurrent, 500.0);
-      // expConfig untouched (seed = fresh defaults)
-      expect(data.expConfig.sens, 'AUTO');
-      expect(data.expConfig.limA, 0);
-    });
-
-    test('F| EXP rebuilds expConfig and carries root live fields', () {
-      final data = MachineData.mergeFromPacket(
-        'F|FUNC:196,MODE:C,SENS:MANUAL,POL_A:-,CONFIG_VIEW:EXP',
-        MachineData(),
-      );
-
-      expect(data.configView, 'EXP');
-      expect(data.func, '196');
-      expect(data.expConfig.sens, 'MANUAL');
-      expect(data.expConfig.polA, '-');
-      // stdConfig not part of this F| → stays at defaults
+      expect(data.pamMode, 'STD');
       expect(data.stdConfig.func, '195');
-      expect(data.stdConfig.coilCurrent, 0.0);
+      expect(data.stdConfig.coilCurrent, 250.0);
+      expect(data.expConfig.sens, 'AUTO'); // EXP carried at defaults
     });
+
+    test(
+      'D| PAM_MODE transition updates the root field without altering '
+      'D|/L| content-based section routing',
+      () {
+        var data = MachineData.mergeFromPacket(
+          'F|FUNC:196,MODE:C,PAM_MODE:STD',
+          MachineData(),
+        );
+        expect(data.pamMode, 'STD');
+
+        // A D| packet that only changes PAM_MODE (no config-section keys)
+        // updates the root pamMode field; D|/L| section routing stays
+        // purely content-based (_stdGroupKeys/_expGroupKeys) — this never
+        // depended on CONFIG_VIEW or PAM_MODE — only on which wire keys are
+        // present in the packet.
+        data = MachineData.mergeFromPacket('D|PAM_MODE:EXP', data);
+
+        expect(data.pamMode, 'EXP');
+        expect(data.stdConfig.func, '196');
+        expect(data.expConfig.sens, 'AUTO');
+      },
+    );
 
     test('D| STD keys update stdConfig only, expConfig untouched', () {
       var data = MachineData.mergeFromPacket(
-        'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+        'F|FUNC:196,MODE:C,PAM_MODE:STD',
         MachineData(),
       );
       data = MachineData.mergeFromPacket('D|FUNC:195,CURRENT_S:1500', data);
 
-      expect(data.configView, 'STD');
       expect(data.func, '195');
       expect(data.stdConfig.func, '195');
       expect(data.stdConfig.coilCurrent, 1500.0);
@@ -326,18 +379,20 @@ void main() {
     });
 
     test(
-      'D| EXP keys route to expConfig by content even while view is STD',
+      'D| EXP keys route to expConfig by content even while PAM_MODE is '
+      'STD',
       () {
-        // First Advanced save: SENS delta arrives before the later
-        // CONFIG_VIEW:EXP delta, so the resolved view is still STD — content
-        // routing must still place SENS in expConfig (not stdConfig).
+        // First Advanced save: a SENS delta can arrive before PAM_MODE ever
+        // flips to EXP (e.g. a param write before the mode-select drawer
+        // action) — content routing must still place SENS in expConfig, not
+        // stdConfig, regardless of the current root PAM_MODE.
         var data = MachineData.mergeFromPacket(
-          'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+          'F|FUNC:196,MODE:C,PAM_MODE:STD',
           MachineData(),
         );
         data = MachineData.mergeFromPacket('D|SENS:MANUAL', data);
 
-        expect(data.configView, 'STD');
+        expect(data.pamMode, 'STD');
         expect(data.expConfig.sens, 'MANUAL');
         expect(data.stdConfig.func, '196');
       },
@@ -345,7 +400,7 @@ void main() {
 
     test('D| EXP-only isolation: stdConfig untouched by EXP deltas', () {
       var data = MachineData.mergeFromPacket(
-        'F|SENS:MANUAL,LIM_A:5,CONFIG_VIEW:EXP',
+        'F|SENS:MANUAL,LIM_A:5,PAM_MODE:EXP',
         MachineData(),
       );
       data = MachineData.mergeFromPacket('D|CURRENT_S:900', data);
@@ -355,36 +410,58 @@ void main() {
       expect(data.expConfig.limA, 5);
     });
 
-    test('D| CONFIG_VIEW:EXP flips the view without clearing stdConfig', () {
-      var data = MachineData.mergeFromPacket(
-        'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
-        MachineData(),
-      );
-      data = MachineData.mergeFromPacket('D|CONFIG_VIEW:EXP', data);
-
-      expect(data.configView, 'EXP');
-      expect(data.stdConfig.func, '196');
-      expect(data.expConfig.sens, 'AUTO');
-    });
-
     test('F| EXP carries forward a previously-sent STD section', () {
       // Never-clobber rule: an EXP full snapshot must not reset stdConfig
       // that a prior STD snapshot established.
       var data = MachineData.mergeFromPacket(
-        'F|FUNC:196,MODE:C,CONFIG_VIEW:STD',
+        'F|FUNC:196,MODE:C,PAM_MODE:STD',
         MachineData(),
       );
       data = MachineData.mergeFromPacket(
-        'F|SENS:MANUAL,POL_A:-,CONFIG_VIEW:EXP',
+        'F|SENS:MANUAL,POL_A:-,PAM_MODE:EXP',
         data,
       );
 
-      expect(data.configView, 'EXP');
+      expect(data.pamMode, 'EXP');
       expect(data.expConfig.sens, 'MANUAL');
       expect(data.stdConfig.func, '196');
       // Root IS replaced by the EXP F| (FUNC absent → default).
       expect(data.func, '195');
     });
+
+    test(
+      'FUNCTION reboot to STD: coalesced D| activates stdConfig, expConfig '
+      'preserved',
+      () {
+        // Mirrors handleChangeMode's real coalesced D| packet: FUNC/MODE/
+        // CURRENT_* land together in one delta, with no PAM_MODE key at all
+        // (a FUNCTION reboot does not itself change PAM_MODE — only an
+        // explicit Basic/Advanced drawer selection does). D|/L| routing is
+        // content-based, so this must update stdConfig via _stdGroupKeys
+        // while leaving a previously-established expConfig untouched.
+        var data = MachineData.mergeFromPacket(
+          'F|SENS:MANUAL,LIM_A:7,PAM_MODE:EXP',
+          MachineData(),
+        );
+        expect(data.expConfig.sens, 'MANUAL');
+
+        data = MachineData.mergeFromPacket(
+          'D|FUNC:195,MODE:V,CURRENT_S:1000',
+          data,
+        );
+
+        expect(data.func, '195');
+        expect(data.stdConfig.func, '195');
+        expect(data.stdConfig.mode, 'V');
+        expect(data.stdConfig.coilCurrent, 1000.0);
+        // expConfig preserved — a FUNCTION reboot does not touch PAM_MODE
+        // and content-based D| routing never overwrites the other section.
+        expect(data.expConfig.sens, 'MANUAL');
+        expect(data.expConfig.limA, 7);
+        // PAM_MODE itself is unaffected by the reboot's D| packet.
+        expect(data.pamMode, 'EXP');
+      },
+    );
 
     test('CCMODE/ACC booleans parse from ON/OFF wire values', () {
       final data = MachineData.mergeFromPacket(

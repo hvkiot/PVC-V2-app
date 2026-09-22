@@ -150,10 +150,10 @@ class CustomDrawer extends ConsumerWidget {
 /// turn is the single source of truth for which config screen (Basic/
 /// Advanced) [ConfigScreen] shows. This is now the ONLY place in the app
 /// that changes PAM MODE — never automatically on connect/reconnect, never
-/// as a side effect of a Basic/Advanced Config save. It intentionally does
-/// NOT touch CONFIG_VIEW (see [BleCommandController.setConfigView]), which
-/// remains a separate, now UI-selection-inert concern (F|-merge routing)
-/// still owned by BasicConfigScreen/AdvancedConfigScreen after a save. The
+/// as a side effect of a Basic/Advanced Config save. (Phase 13, 2026-09:
+/// CONFIG_VIEW — the old, separate F|-merge-routing app-preference cache
+/// this comment used to distinguish PAM MODE from — has been removed
+/// entirely; [MachineData.pamMode] is now the only routing state.) The
 /// selection shown here is always derived from [MachineData.pamMode] —
 /// never a locally-held selection — so it stays correct even if MODE
 /// changes from elsewhere, and updates automatically once the ESP's
@@ -199,6 +199,15 @@ class _ConfigViewSelector extends ConsumerWidget {
               selected: {current},
               showSelectedIcon: false,
               onSelectionChanged: (selection) {
+                debugPrint('D|: PAM MODE selection changed to $selection');
+                debugPrint('D|: Current PAM MODE is $current');
+                debugPrint(
+                  'D|: AIN:A = ${ref.read(machineDataProvider).expConfig.ainACoefType}',
+                );
+                debugPrint(
+                  'D|: AIN:B = ${ref.read(machineDataProvider).expConfig.ainBCoefType}',
+                );
+
                 Navigator.pop(context); // Close the drawer immediately on tap
                 final target = selection.first;
                 // Selection is derived from MachineData.pamMode, not a

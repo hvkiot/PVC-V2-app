@@ -151,6 +151,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       machineDataProvider.select((d) => d.pamConnected),
     );
     final isBusy = ref.watch(bleProvider.select((s) => s.isBusy));
+    // While the initial post-connect F| snapshot hasn't been merged yet,
+    // machineData.pamConnected may still hold a stale value from a previous
+    // connection — don't treat it as authoritative until sync completes.
+    final initialSyncComplete = ref.watch(
+      bleProvider.select((s) => s.initialSyncComplete),
+    );
+    final isSyncing = isConnected && !initialSyncComplete;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -168,7 +175,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         endDrawer: const CustomDrawer(),
         appBar: CustomAppBar(
           showLogo: true,
-          title: pamIsConnected ? title() : "PAM NOT CONNECTED",
+          title: isSyncing
+              ? "SYNCING..."
+              : (pamIsConnected ? title() : "PAM NOT CONNECTED"),
           preferredSizeChild: PreferredSize(
             preferredSize: const Size.fromHeight(kToolbarHeight),
             child: isProcessing || isBusy
@@ -200,8 +209,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ],
         ),
-        body: pamIsConnected ? _children[_currentIndex] : _buildNoPamScreen(),
-        bottomNavigationBar: pamIsConnected
+        body: isSyncing
+            ? _buildSyncingScreen()
+            : (pamIsConnected ? _children[_currentIndex] : _buildNoPamScreen()),
+        bottomNavigationBar: (!isSyncing && pamIsConnected)
             ? BottomNavigationBar(
                 items: _bottomNavigationBarItems,
                 currentIndex: _currentIndex,
@@ -215,6 +226,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 enableFeedback: isConnected,
               )
             : null,
+      ),
+    );
+  }
+
+  // Shown while a fresh BLE connection is up but the initial F| configuration
+  // snapshot hasn't finished arriving/merging yet — avoids flashing "PAM NOT
+  // CONNECTED" before machineData.pamConnected is known to be accurate.
+  // Reuses the project's existing loading-indicator visual conventions.
+  Widget _buildSyncingScreen() {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: theme.colorScheme.primary),
+            const SizedBox(height: 24),
+            Text(
+              "Syncing PVC configuration…",
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
