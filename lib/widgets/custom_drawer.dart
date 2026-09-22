@@ -199,15 +199,6 @@ class _ConfigViewSelector extends ConsumerWidget {
               selected: {current},
               showSelectedIcon: false,
               onSelectionChanged: (selection) {
-                debugPrint('D|: PAM MODE selection changed to $selection');
-                debugPrint('D|: Current PAM MODE is $current');
-                debugPrint(
-                  'D|: AIN:A = ${ref.read(machineDataProvider).expConfig.ainACoefType}',
-                );
-                debugPrint(
-                  'D|: AIN:B = ${ref.read(machineDataProvider).expConfig.ainBCoefType}',
-                );
-
                 Navigator.pop(context); // Close the drawer immediately on tap
                 final target = selection.first;
                 // Selection is derived from MachineData.pamMode, not a

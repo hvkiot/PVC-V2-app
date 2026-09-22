@@ -139,10 +139,6 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
     // behavior below is byte-for-byte what the previous inline loop did.
     setState(() => _isSynchronizing = true);
 
-    for (final command in commandsToSend) {
-      debugPrint('D| [BasicConfig] Sending command: $command');
-    }
-
     final allSuccess = await bleCommand.execute(
       commandsToSend,
       isModeChange: modeChanged,

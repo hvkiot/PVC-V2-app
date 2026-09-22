@@ -27,6 +27,19 @@ class _Param07AIN extends StatelessWidget {
       draftNotifier.setAinAb(result.b);
       draftNotifier.setAinAc(result.c);
       draftNotifier.setAinACoefType(result.x);
+      // FUNCTION 196 product constraint: both AIN channels must always end
+      // up fully matched (a/b/c and input type) — see AGENTS.md Parameter
+      // 07 notes. Editing A here mirrors the exact same a/b/c/type into B
+      // immediately, so the two channels can never be saved out of sync;
+      // channel B has no independent edit surface left to drift with.
+      // Channel B isn't even shown in mode 195 (see build() below), so this
+      // is a no-op there regardless.
+      if (mode == '196') {
+        draftNotifier.setAinBa(result.a);
+        draftNotifier.setAinBb(result.b);
+        draftNotifier.setAinBc(result.c);
+        draftNotifier.setAinBCoefType(result.x);
+      }
     }
   }
 
@@ -45,6 +58,13 @@ class _Param07AIN extends StatelessWidget {
       draftNotifier.setAinBb(result.b);
       draftNotifier.setAinBc(result.c);
       draftNotifier.setAinBCoefType(result.x);
+      // Mirror of the A-side sync above — this dialog only opens when
+      // mode == '196' (see build() below, `dual`-gated), so B and A are
+      // always kept identical regardless of which channel the user edits.
+      draftNotifier.setAinAa(result.a);
+      draftNotifier.setAinAb(result.b);
+      draftNotifier.setAinAc(result.c);
+      draftNotifier.setAinACoefType(result.x);
     }
   }
 

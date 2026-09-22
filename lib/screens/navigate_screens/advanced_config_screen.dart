@@ -7,6 +7,7 @@ import 'package:pvc_v2/providers/advanced_config_draft_provider.dart';
 import 'package:pvc_v2/providers/ble_provider.dart';
 import 'package:pvc_v2/providers/global_message_provider.dart';
 import 'package:pvc_v2/services/ble_command_controller.dart';
+import 'package:pvc_v2/utils/coef_normalizer.dart';
 import 'package:pvc_v2/utils/machine_utils.dart';
 import 'package:pvc_v2/utils/pvc_debug_trace.dart';
 import 'package:pvc_v2/utils/responsive_helper.dart';
@@ -212,6 +213,49 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
         );
         break;
       case '07':
+        // Phase 16: FUNCTION 196 product constraint — both AIN channels must
+        // end up on the SAME input type (Voltage/Voltage or Current/Current)
+        // after this save; mixed A/B is rejected before anything is sent.
+        // FUNCTION 195 skips this entirely (only channel A is usable).
+        //
+        // The "effective final type" per channel can't be read off the
+        // draft alone: writeAIN() below independently diffs each channel
+        // against the MachineData baseline and may emit only the channel
+        // that actually changed (numeric a/b/c OR coefficient type), so an
+        // untouched channel's real final value is its EXISTING PAM/device
+        // baseline, not necessarily whatever the draft happens to hold.
+        // This mirrors writeAIN()'s own aChanged/bChanged criteria
+        // (ain_coefficient_writes.dart) locally, read-only, purely to
+        // compute what will actually land — it does not change what
+        // writeAIN() itself decides to send.
+        if (mode == '196') {
+          final aWillChange =
+              draft.ainAa != machineData.expConfig.ainAa ||
+              draft.ainAb != machineData.expConfig.ainAb ||
+              draft.ainAc != machineData.expConfig.ainAc ||
+              draft.ainACoefType !=
+                  normalizeCoefType(machineData.expConfig.ainACoefType);
+          final bWillChange =
+              draft.ainBa != machineData.expConfig.ainBa ||
+              draft.ainBb != machineData.expConfig.ainBb ||
+              draft.ainBc != machineData.expConfig.ainBc ||
+              draft.ainBCoefType !=
+                  normalizeCoefType(machineData.expConfig.ainBCoefType);
+
+          final effectiveA = aWillChange
+              ? draft.ainACoefType
+              : normalizeCoefType(machineData.expConfig.ainACoefType);
+          final effectiveB = bWillChange
+              ? draft.ainBCoefType
+              : normalizeCoefType(machineData.expConfig.ainBCoefType);
+
+          if (effectiveA != effectiveB) {
+            messageNotifier.showError(
+              'Both AIN channels must use the same input type in FUNCTION 196',
+            );
+            return;
+          }
+        }
         // Dual-channel writeAIN() diffs each channel and, when both changed,
         // emits ONE grouped AIN196 transaction (write + readback + one SAVE +
         // one D|) in mode 196. Safe in mode 195: the untouched B baseline
