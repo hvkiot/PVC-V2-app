@@ -174,7 +174,9 @@ class _ConfigViewSelector extends ConsumerWidget {
     // pamMode only ever carries 'STD' or 'EXP' (see PAM_MODE parsing in
     // machine_data.dart); anything unexpected falls back to Basic.
     final current = pamMode == 'EXP' ? 'EXP' : 'STD';
-
+    final pin15 = ref.watch(machineDataProvider.select((c) => c.pin15));
+    final pin6 = ref.watch(machineDataProvider.select((c) => c.pin6));
+    final enabled = pin15 || pin6;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Column(
@@ -192,28 +194,52 @@ class _ConfigViewSelector extends ConsumerWidget {
           Semantics(
             label: 'Configuration view',
             child: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'STD', label: Text('Basic')),
-                ButtonSegment(value: 'EXP', label: Text('Advanced')),
+              segments: [
+                ButtonSegment(value: 'STD', label: const Text('Basic-STD')),
+                ButtonSegment(value: 'EXP', label: const Text('Advanced-EXP')),
               ],
               selected: {current},
               showSelectedIcon: false,
-              onSelectionChanged: (selection) {
-                Navigator.pop(context); // Close the drawer immediately on tap
-                final target = selection.first;
-                // Selection is derived from MachineData.pamMode, not a
-                // local field — if the tapped segment is already the
-                // active PAM MODE, don't send a redundant BLE command.
-                if (target == current) return;
-                // setPamMode() goes through the standard busy-guarded
-                // execute() path (MODE STD/EXP -> SAVE as one ESP-side
-                // transaction) — fire-and-forget here, same UX pattern as
-                // every other drawer action; the actual source of truth is
-                // the D|PAM_MODE delta the ESP sends back once the
-                // transition completes, which ConfigScreen reacts to
-                // automatically.
-                unawaited(ref.read(bleCommandProvider).setPamMode(target));
-              },
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith<Color>((
+                  states,
+                ) {
+                  if (states.contains(WidgetState.disabled)) {
+                    return Theme.of(context).colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.3);
+                  }
+                  if (states.contains(WidgetState.selected)) {
+                    return Theme.of(context).colorScheme.primary;
+                  }
+                  return Colors.transparent;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith<Color>((
+                  states,
+                ) {
+                  if (states.contains(WidgetState.disabled)) {
+                    return Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.38);
+                  }
+                  if (states.contains(WidgetState.selected)) {
+                    return Theme.of(context).colorScheme.onPrimary;
+                  }
+                  return Theme.of(context).colorScheme.onSurface;
+                }),
+              ),
+              // When enabled is false, !enabled becomes true, making the button interactive.
+              onSelectionChanged: !enabled
+                  ? (selection) {
+                      Navigator.pop(
+                        context,
+                      ); // Close the drawer immediately on tap
+                      final target = selection.first;
+                      if (target == current) return;
+                      unawaited(
+                        ref.read(bleCommandProvider).setPamMode(target),
+                      );
+                    }
+                  : null,
             ),
           ),
         ],
