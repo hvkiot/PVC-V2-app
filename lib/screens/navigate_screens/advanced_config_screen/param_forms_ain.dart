@@ -21,6 +21,9 @@ class _Param07AIN extends StatelessWidget {
       // Parameter 07 edits the coefficient type, not the live/root AIN type.
       initialX: draft.ainACoefType,
       channelLabel: 'A',
+      // PHASE 18B: FUNCTION-aware Current preset (195's ±100% 4-12-20 mA vs
+      // 196's 0-100% 4-20 mA) — see ain_edit_dialog.dart's `function` param.
+      function: mode,
     );
     if (result != null) {
       draftNotifier.setAinAa(result.a);
@@ -52,6 +55,11 @@ class _Param07AIN extends StatelessWidget {
       // Parameter 07 edits the coefficient type, not the live/root AIN type.
       initialX: draft.ainBCoefType,
       channelLabel: 'B',
+      // This dialog only opens when mode == '196' (see build() below), so
+      // this is always '196' here — passed explicitly for consistency with
+      // _openAinDialog() above rather than relying on AinEditDialog's
+      // default.
+      function: mode,
     );
     if (result != null) {
       draftNotifier.setAinBa(result.a);

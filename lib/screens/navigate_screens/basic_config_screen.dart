@@ -144,6 +144,22 @@ class _BasicConfigScreenState extends ConsumerState<BasicConfigScreen> {
       isModeChange: modeChanged,
     );
 
+    // Lifecycle guard for the FUNCTION 195<->196 + Advanced/EXP race — mirror
+    // of the identical guard in advanced_config_screen.dart's own _saveConfig().
+    // Changing FUNCTION here can make PAM_MODE flip STD<->EXP mid-transaction
+    // (D|PAM_MODE:... arrives while the write above is still awaiting
+    // D|TRANSITION:False). ConfigScreen watches machineDataProvider.pamMode
+    // and swaps BasicConfigScreen -> AdvancedConfigScreen on that change,
+    // disposing this State while bleCommand.execute() is still in flight.
+    // execute() itself is unaffected — it reads machineDataProvider via ref
+    // independently of this widget and always runs to completion — only the
+    // UI continuation below (setState, reset, success/error message) must
+    // not touch this State once it's gone. When FUNCTION is changed while
+    // already staying in STD, pamMode never flips away from STD, this screen
+    // is never the one disposed, mounted stays true, and behavior is
+    // unchanged.
+    if (!mounted) return;
+
     setState(() => _isSynchronizing = false);
 
     if (allSuccess) {

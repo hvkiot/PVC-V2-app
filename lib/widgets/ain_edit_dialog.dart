@@ -21,6 +21,16 @@ class AinEditDialog extends StatefulWidget {
   final int initialC;
   final String initialX;
   final String channelLabel;
+  // PAM FUNCTION id ('195' or '196') the caller is currently configuring —
+  // NOT the V/C input type (that's initialX/_selectedX below). Needed only
+  // to pick the correct Current preset: FUNCTION 195's PAM-199-P ±100%
+  // 4-12-20 mA two-solenoid preset (A=2500, B=1000, C=6000, X=C — W.E.ST.
+  // PAM-199-P doc section 5.15) is a different linear mapping than FUNCTION
+  // 196's generic 0-100% 4-20 mA preset (A=1250, B=1000, C=2000, X=C); see
+  // _presetValues below. Defaults to '196' (the pre-existing generic preset)
+  // so any other future caller that doesn't pass this keeps today's
+  // behavior unchanged.
+  final String function;
 
   const AinEditDialog({
     super.key,
@@ -29,6 +39,7 @@ class AinEditDialog extends StatefulWidget {
     required this.initialC,
     required this.initialX,
     this.channelLabel = 'A',
+    this.function = '196',
   });
 
   static Future<AinEditResult?> show(
@@ -38,6 +49,7 @@ class AinEditDialog extends StatefulWidget {
     required int initialC,
     required String initialX,
     String channelLabel = 'A',
+    String function = '196',
   }) {
     return showModalBottomSheet<AinEditResult>(
       context: context,
@@ -49,6 +61,7 @@ class AinEditDialog extends StatefulWidget {
         initialC: initialC,
         initialX: initialX,
         channelLabel: channelLabel,
+        function: function,
       ),
     );
   }
@@ -64,9 +77,24 @@ class _AinEditDialogState extends State<AinEditDialog> {
   String _selectedX = 'V';
   String _selectedPreset = 'User defined';
 
-  static const _presetValues = {
+  // FUNCTION-aware: the Voltage preset is identical for both FUNCTIONs
+  // (unchanged from before this map became FUNCTION-aware — see PHASE 18B
+  // notes in AGENTS.md), but Current has two DIFFERENT correct presets
+  // depending on widget.function, so this can no longer be a single static
+  // const map. FUNCTION 195 (4-12-20 mA, PAM ±100% two-solenoid input) is
+  // A=2500/B=1000/C=6000/X=C per W.E.ST. PAM-199-P doc section 5.15;
+  // FUNCTION 196 (plain 4-20 mA, 0-100%) keeps the pre-existing
+  // A=1250/B=1000/C=2000/X=C. Key names differ ('4-12-20mA' vs '4-20mA') so
+  // a FUNCTION 195 dialog's preset map has no entry that can ever match
+  // FUNCTION 196's generic preset values (or vice versa) — _detectPreset()
+  // below therefore can never silently mis-tag an existing FUNCTION 195
+  // configuration as the generic 4-20mA preset.
+  Map<String, ({int a, int b, int c, String x})> get _presetValues => {
     '0-10V': (a: 1000, b: 1000, c: 0, x: 'V'),
-    '4-20mA': (a: 1250, b: 1000, c: 2000, x: 'C'),
+    if (widget.function == '195')
+      '4-12-20mA': (a: 2500, b: 1000, c: 6000, x: 'C')
+    else
+      '4-20mA': (a: 1250, b: 1000, c: 2000, x: 'C'),
   };
 
   @override
@@ -472,6 +500,19 @@ class _AinEditDialogState extends State<AinEditDialog> {
   }
 
   Widget _buildPresets(ThemeData theme) {
+    // FUNCTION-specific Current preset — see _presetValues above. Label/
+    // subtitle text distinguishes the two FUNCTIONs' input ranges per PHASE
+    // 18B (W.E.ST. PAM-199-P doc section 5.15): FUNCTION 195 is a bipolar
+    // ±100% two-solenoid input (4 mA -> -100%, 12 mA -> 0%, 20 mA -> +100%);
+    // FUNCTION 196 is the plain unipolar 0-100% 4-20 mA input.
+    final isFn195 = widget.function == '195';
+    final currentPresetKey = isFn195 ? '4-12-20mA' : '4-20mA';
+    final currentPresetLabel = isFn195
+        ? '4–12–20 mA (±100%)'
+        : '4–20 mA (0–100%)';
+    final currentPresetSubtitle = isFn195
+        ? 'A=2500, B=1000, C=6000, X=C'
+        : 'A=1250, B=1000, C=2000, X=C';
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -503,10 +544,11 @@ class _AinEditDialogState extends State<AinEditDialog> {
           ),
           _buildRadioTile(
             theme,
-            value: '4-20mA',
+            value: currentPresetKey,
+            label: currentPresetLabel,
             groupValue: _selectedPreset,
             onChanged: _applyPreset,
-            subtitle: 'A=1250, B=1000, C=2000, X=C',
+            subtitle: currentPresetSubtitle,
           ),
         ],
       ),
@@ -519,6 +561,7 @@ class _AinEditDialogState extends State<AinEditDialog> {
     required String groupValue,
     required ValueChanged<String?> onChanged,
     String? subtitle,
+    String? label,
   }) {
     final isSelected = value == groupValue;
     return InkWell(
@@ -542,7 +585,7 @@ class _AinEditDialogState extends State<AinEditDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      value,
+                      label ?? value,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: isSelected
                             ? FontWeight.w600
